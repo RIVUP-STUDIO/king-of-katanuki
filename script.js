@@ -134,7 +134,7 @@
     cx = W/2; cy = H/2;
     R = W * 0.30;
     safeBand = W * 0.0223;
-    needleOffset = W * 0.16;
+    needleOffset = W * 0.20;
     buildStageCache();
     draw();
   }
