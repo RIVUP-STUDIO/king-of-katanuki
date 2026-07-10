@@ -20,6 +20,7 @@
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
+  const INNER_WARN_PX = 5;    // a shallow dip past the line warns (yellow) instead of failing outright
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -132,7 +133,7 @@
     W = size; H = size;
     cx = W/2; cy = H/2;
     R = W * 0.30;
-    safeBand = W * 0.015;
+    safeBand = W * 0.0223;
     needleOffset = W * 0.16;
     buildStageCache();
     draw();
@@ -337,7 +338,7 @@
     let snappedDist = dist;
     if(dist > 0.001 && Math.abs(diffRaw) < magnetRange){
       const pull = 1 - Math.abs(diffRaw) / magnetRange; // 0..1, stronger near the line
-      snappedDist = dist - diffRaw * pull * 0.6;
+      snappedDist = dist - diffRaw * pull * 0.72;
     }
     const dirX = dist > 0.001 ? dx / dist : 1;
     const dirY = dist > 0.001 ? dy / dist : 0;
@@ -346,9 +347,13 @@
 
     const diff = snappedDist - targetR;
 
+    // Outside the line is always forgiving (yellow, never fails). Inside,
+    // a shallow dip just past the safe band still only warns (yellow) —
+    // only a deeper intrusion counts as a real break (red).
     let newState;
     if(Math.abs(diff) <= safeBand) newState = 'green';
     else if(diff > safeBand) newState = 'yellow';
+    else if(diff > -(safeBand + INNER_WARN_PX)) newState = 'yellow';
     else newState = 'red';
 
     if(newState !== currentState){
@@ -375,6 +380,8 @@
         vibrate(5);
       }
 
+      // Clear condition is intentionally strict: every bucket of the line
+      // must be traced. No partial-completion shortcut.
       if(tracedCount >= N_BUCKETS){
         elapsed = (performance.now() - startTime) / 1000;
         clearGame();
