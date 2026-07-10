@@ -64,7 +64,8 @@ canvas{ touch-action:none; display:block; }
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   gap:22px; text-align:center; z-index:10;
   background: radial-gradient(ellipse at 50% 30%, rgba(25,28,43,0.4), rgba(16,18,28,0.92) 75%);
-  padding: 0 24px;
+  padding: 24px 24px;
+  overflow-y: auto;
 }
 .hidden{ display:none !important; }
 
@@ -108,22 +109,40 @@ button.cta:active{ transform: translateY(4px); box-shadow: 0 2px 0 #7a3706; }
 .legend span{ display:flex; align-items:center; gap:6px; }
 .dot{ width:9px; height:9px; border-radius:50%; display:inline-block; }
 
-.stageList{ display:flex; flex-direction:column; gap:12px; width:min(78vw, 300px); }
+.stageList{
+  display:flex; flex-direction:column; gap:10px;
+  width:min(84vw, 320px);
+  max-height: 48vh; overflow-y: auto;
+  padding: 2px 4px 2px 2px;
+}
 button.stageBtn{
   font-family:'Zen Kaku Gothic New', sans-serif;
-  font-weight:700; font-size:15px; letter-spacing:2px;
-  padding: 13px 18px; border-radius: 16px; border:1px solid rgba(255,255,255,0.14);
+  font-weight:700; font-size:14px; letter-spacing:1px;
+  padding: 9px 14px; border-radius: 16px; border:1px solid rgba(255,255,255,0.14);
   background: rgba(255,255,255,0.06);
   color: var(--paper);
-  display:flex; align-items:center; gap:12px;
-  cursor:pointer;
+  display:flex; align-items:center; gap:10px;
+  cursor:pointer; text-align:left;
 }
 button.stageBtn:active{ background: rgba(255,255,255,0.14); }
 button.stageBtn .num{
-  width:26px; height:26px; border-radius:50%; flex:none;
+  width:22px; height:22px; border-radius:50%; flex:none;
   display:flex; align-items:center; justify-content:center;
-  font-size:13px; font-weight:900;
+  font-size:12px; font-weight:900;
   background: var(--lantern); color:#1a0e04;
+}
+button.stageBtn canvas.thumb{
+  width:38px; height:38px; flex:none;
+  border-radius:10px; background: rgba(255,255,255,0.06);
+}
+button.stageBtn .stageInfo{
+  display:flex; flex-direction:column; gap:3px; min-width:0;
+}
+button.stageBtn .stageName{
+  font-size:14px; font-weight:700;
+}
+button.stageBtn .stageStars{
+  font-size:11px; letter-spacing:2px; color: var(--lantern-dim); opacity:0.85;
 }
 .linkBtn{
   background:none; border:none; color: var(--paper); opacity:0.5;

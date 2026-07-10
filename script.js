@@ -26,31 +26,90 @@
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
   // angle (atan2(dy,dx), y-down) and the base radius R, return how far the
   // guide line sits from the center in that direction. A plain circle is
-  // just a constant; heart/star vary by angle.
-  function heartRadius(theta, Rb){
-    const phi = -theta; // convert canvas angle to standard math (y-up) angle
-    const s = Math.sin(phi), c = Math.cos(phi);
-    const r = 2 - 2*s + s*Math.sqrt(Math.abs(c))/(s + 1.4);
-    return (r / 4) * Rb * 1.18;
+  // just a constant; everything else varies by angle.
+  function toRad(deg){ return deg * Math.PI / 180; }
+  function angDiff(a, b){
+    let d = (a - b) % (Math.PI*2);
+    if(d > Math.PI) d -= Math.PI*2;
+    if(d < -Math.PI) d += Math.PI*2;
+    return d;
   }
-  function starRadius(theta, Rb){
-    const points = 5;
-    const step = Math.PI / points;
-    let t = theta + Math.PI/2; // rotate so one point faces up
-    t = ((t % (2*step)) + (2*step)) % (2*step);
-    if(t > step) t = (2*step) - t;
-    const Router = Rb * 1.12, Rinner = Rb * 0.46;
-    const xA = Router, yA = 0;
-    const xB = Rinner * Math.cos(step), yB = Rinner * Math.sin(step);
-    const C = -xA * (yB - yA);
-    const denom = Math.sin(t) * (xB - xA) - Math.cos(t) * (yB - yA);
-    return C / denom;
+  // Smooth localized bump (0..1) centered on centerDeg, used to add small
+  // features (a handle, a knot, a fin) without making the outline jagged.
+  function bump(theta, centerDeg, widthDeg){
+    const c = toRad(centerDeg), w = toRad(widthDeg);
+    const d = angDiff(theta, c);
+    return Math.exp(-(d*d) / (2*w*w));
   }
 
+  function furinRadius(theta, Rb){ // 風鈴: round glass bell + one hanging strip
+    let r = Rb * (1 + 0.05*Math.cos(2*theta));
+    r += Rb * 0.85 * bump(theta, 90, 11); // tanzaku strip hanging straight down
+    return r;
+  }
+  function uchiwaRadius(theta, Rb){ // うちわ: round paddle + straight handle
+    let r = Rb * (1 + 0.10*Math.cos(2*(theta + Math.PI/2)));
+    r += Rb * 1.05 * bump(theta, 90, 9); // handle
+    return r;
+  }
+  function goldfishRadius(theta, Rb){ // 金魚: oval body + forked tail
+    let r = Rb * (1 + 0.15*Math.cos(2*theta));
+    r += Rb * 0.35 * bump(theta, 180, 35);
+    r -= Rb * 0.20 * bump(theta, 180, 9);
+    r += Rb * 0.16 * bump(theta, 160, 8);
+    r += Rb * 0.16 * bump(theta, 200, 8);
+    return r;
+  }
+  function balloonRadius(theta, Rb){ // 水風船: round + small tied knot on top
+    let r = Rb;
+    r += Rb * 0.16 * bump(theta, -90, 9);
+    return r;
+  }
+  function cottonCandyRadius(theta, Rb){ // わたがし: fluffy poof on a thin stick
+    let r = Rb * (1 + 0.06*Math.cos(5*theta+0.6) + 0.05*Math.cos(7*theta+1.3) + 0.04*Math.cos(3*theta+2.0));
+    r += Rb * 0.55 * bump(theta, 90, 6);
+    return r;
+  }
+  function candyAppleRadius(theta, Rb){ // りんご飴: round apple + stick on top
+    let r = Rb * (1 + 0.06*Math.cos(2*theta - toRad(90)));
+    r += Rb * 0.42 * bump(theta, -90, 6);
+    return r;
+  }
+  function pinwheelRadius(theta, Rb){ // 風ぐるま: 4 rounded blades + small stick
+    const blade = (Math.cos(4*theta) + 1) / 2;
+    let r = Rb * (0.55 + 0.55*blade);
+    r += Rb * 0.35 * bump(theta, 90, 6);
+    return r;
+  }
+  function maskRadius(theta, Rb){ // お面: outer face silhouette only
+    let r = Rb * (1 + 0.05*Math.cos(theta - toRad(90)));
+    r += Rb * 0.10 * bump(theta, 90, 12);   // gentle chin point
+    r -= Rb * 0.06 * bump(theta, 0, 18);    // cheek taper (right)
+    r -= Rb * 0.06 * bump(theta, 180, 18);  // cheek taper (left)
+    return r;
+  }
+  function lanternRadius(theta, Rb){ // 提灯: barrel body, pinched neck, cap knobs
+    let r = Rb * (0.68 + 0.42*Math.pow(Math.cos(theta), 2));
+    r *= (1 + 0.025*Math.cos(theta*8));
+    r -= Rb * 0.10 * bump(theta, -72, 10);
+    r -= Rb * 0.10 * bump(theta, 72, 10);
+    r += Rb * 0.20 * bump(theta, -90, 7);
+    r += Rb * 0.20 * bump(theta, 90, 7);
+    return r;
+  }
+
+  // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
-    { name:'日の丸',   shapeFn:(th,Rb)=>Rb,          fill:'188,0,45'   },
-    { name:'ハート',   shapeFn:heartRadius,            fill:'255,63,110' },
-    { name:'星',       shapeFn:starRadius,             fill:'255,196,42' }
+    { name:'日の丸',   shapeFn:(th,Rb)=>Rb,     fill:'188,0,45',   difficulty:1 },
+    { name:'風鈴',     shapeFn:furinRadius,      fill:'90,170,220', difficulty:1 },
+    { name:'うちわ',   shapeFn:uchiwaRadius,     fill:'255,150,90', difficulty:2 },
+    { name:'金魚',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:2 },
+    { name:'水風船',   shapeFn:balloonRadius,    fill:'110,190,255',difficulty:2 },
+    { name:'わたがし', shapeFn:cottonCandyRadius,fill:'255,170,210',difficulty:3 },
+    { name:'りんご飴', shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
+    { name:'風ぐるま', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:4 },
+    { name:'お面',     shapeFn:maskRadius,       fill:'250,225,190',difficulty:4 },
+    { name:'提灯',     shapeFn:lanternRadius,    fill:'255,138,61', difficulty:5 }
   ];
   let currentStageIndex = 0;
   let targetRCache = new Float32Array(N_BUCKETS);
@@ -73,14 +132,45 @@
     shapePath.closePath();
   }
 
+  // Small silhouette preview drawn inside each stage-select button.
+  function drawStageThumb(canvasEl, stage){
+    const dpr = window.devicePixelRatio || 1;
+    const size = canvasEl.clientWidth || 40;
+    canvasEl.width = size * dpr;
+    canvasEl.height = size * dpr;
+    const tctx = canvasEl.getContext('2d');
+    tctx.setTransform(dpr,0,0,dpr,0,0);
+    tctx.clearRect(0,0,size,size);
+    const tcx = size/2, tcy = size/2, tR = size*0.30;
+    tctx.beginPath();
+    for(let i = 0; i <= 72; i++){
+      const a = (i/72) * Math.PI*2;
+      const r = stage.shapeFn(a, tR);
+      const x = tcx + r*Math.cos(a), y = tcy + r*Math.sin(a);
+      if(i === 0) tctx.moveTo(x,y); else tctx.lineTo(x,y);
+    }
+    tctx.closePath();
+    tctx.fillStyle = 'rgba(' + stage.fill + ',0.9)';
+    tctx.fill();
+    tctx.lineWidth = 1;
+    tctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    tctx.stroke();
+  }
+
   function renderStageList(){
     stageList.innerHTML = '';
     STAGES.forEach((s, i) => {
       const btn = document.createElement('button');
       btn.className = 'stageBtn';
-      btn.innerHTML = '<span class="num">' + (i+1) + '</span><span>' + s.name + '</span>';
+      const stars = '★'.repeat(s.difficulty) + '☆'.repeat(5 - s.difficulty);
+      btn.innerHTML =
+        '<span class="num">' + (i+1) + '</span>' +
+        '<canvas class="thumb"></canvas>' +
+        '<span class="stageInfo"><span class="stageName">' + s.name + '</span>' +
+        '<span class="stageStars">' + stars + '</span></span>';
       btn.addEventListener('click', () => startGame(i));
       stageList.appendChild(btn);
+      drawStageThumb(btn.querySelector('canvas.thumb'), s);
     });
   }
 
@@ -539,6 +629,19 @@
             ctx.strokeStyle = 'rgba(120,60,20,0.35)';
             ctx.lineWidth = 2;
           }
+          ctx.stroke();
+        }
+
+        // "start here" marker at the top of the line — a suggestion, not a
+        // requirement, since carving can begin anywhere on the outline.
+        if(!traced[270] && tracedCount === 0){
+          const sp = shapePts[270]; // theta = -90deg = straight up
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, W*0.014, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(255,255,255,0.85)';
+          ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(120,60,20,0.5)';
           ctx.stroke();
         }
       }
