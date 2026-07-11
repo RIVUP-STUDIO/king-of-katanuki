@@ -146,17 +146,46 @@
 
   // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
-    { name:'日の丸',   shapeFn:(th,Rb)=>Rb,     fill:'188,0,45',   difficulty:1 },
-    { name:'風鈴',     shapeFn:furinRadius,      fill:'90,170,220', difficulty:1 },
-    { name:'うちわ',   shapeFn:uchiwaRadius,     fill:'255,150,90', difficulty:2 },
-    { name:'金魚',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:2 },
-    { name:'水風船',   shapeFn:balloonRadius,    fill:'110,190,255',difficulty:2 },
-    { name:'わたがし', shapeFn:cottonCandyRadius,fill:'255,170,210',difficulty:3 },
-    { name:'りんご飴', shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
-    { name:'風ぐるま', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:4 },
-    { name:'お面',     shapeFn:maskRadius,       fill:'250,225,190',difficulty:4 },
-    { name:'提灯',     shapeFn:lanternRadius,    fill:'255,138,61', difficulty:5 }
+    { name:'日の丸',   key:'hinomaru',   shapeFn:(th,Rb)=>Rb,     fill:'188,0,45',   difficulty:1 },
+    { name:'風鈴',     key:'furin',      shapeFn:furinRadius,      fill:'90,170,220', difficulty:2 },
+    { name:'うちわ',   key:'uchiwa',     shapeFn:uchiwaRadius,     fill:'255,150,90', difficulty:1 },
+    { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:2 },
+    { name:'水風船',   key:'mizufusen',  shapeFn:balloonRadius,    fill:'110,190,255',difficulty:2 },
+    { name:'わたがし', key:'watagashi',  shapeFn:cottonCandyRadius,fill:'255,170,210',difficulty:3 },
+    { name:'りんご飴', key:'ringoame',   shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
+    { name:'風ぐるま', key:'kazaguruma', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:3 },
+    { name:'お面',     key:'omen',       shapeFn:maskRadius,       fill:'250,225,190',difficulty:4 },
+    { name:'提灯',     key:'chochin',    shapeFn:lanternRadius,    fill:'255,138,61', difficulty:4 }
   ];
+
+  // ---- clear-scene image assets ----
+  // Real illustrations, loaded from the images/ folder. Any stage without a
+  // matching file just keeps the flat-color procedural look — nothing breaks
+  // while artwork is still being rolled out one stage at a time.
+  const CLEAR_IMG_BASE = 'images/';
+  const clearImages = {}; // stage name -> {img, loaded}
+  STAGES.forEach(s => {
+    const rec = { img: new Image(), loaded: false };
+    rec.img.onload = () => { rec.loaded = true; };
+    rec.img.onerror = () => { rec.loaded = false; };
+    rec.img.src = CLEAR_IMG_BASE + 'clear_' + s.key + '.png';
+    clearImages[s.name] = rec;
+  });
+  const festivalBg = { img: new Image(), loaded: false };
+  festivalBg.img.onload = () => { festivalBg.loaded = true; };
+  festivalBg.img.onerror = () => { festivalBg.loaded = false; };
+  festivalBg.img.src = CLEAR_IMG_BASE + 'festival_bg.png';
+
+  // Draw an image "cover"-fit (like CSS background-size:cover) into a square
+  // of the given side length, centered at (ccx, ccy).
+  function drawImageCover(image, ccx, ccy, side){
+    const iw = image.naturalWidth, ih = image.naturalHeight;
+    if(!iw || !ih) return;
+    const scale = Math.max(side / iw, side / ih);
+    const dw = iw * scale, dh = ih * scale;
+    ctx.drawImage(image, ccx - dw/2, ccy - dh/2, dw, dh);
+  }
+
   let currentStageIndex = 0;
   let targetRCache = new Float32Array(N_BUCKETS);
   let plateEdgeCache = new Float32Array(N_BUCKETS);
@@ -846,9 +875,13 @@
       ctx.rotate(tiltRad);
       ctx.translate(-cx, -cy);
 
+      const stageImg = clearImages[STAGES[currentStageIndex].name];
+      const useImage = celebT > 0 && stageImg && stageImg.loaded;
+
       // Stage 0 (日の丸): once cleared, fade in a crisp white flag field
-      // behind the red disc so it reads as an actual flag being revealed.
-      if(currentStageIndex === 0 && liftEase > 0){
+      // behind the red disc so it reads as an actual flag being revealed
+      // (skipped once a real illustration takes over for this stage).
+      if(currentStageIndex === 0 && liftEase > 0 && !useImage){
         ctx.save();
         ctx.globalAlpha = liftEase;
         const rw = R * 2.9, rh = R * 1.9;
@@ -869,14 +902,24 @@
       }
 
       // shape fill: deepens with progress while playing, then finishes as
-      // a fully solid, glossy "real" surface as it lifts free.
-      const fillRGB = STAGES[currentStageIndex].fill;
-      const baseAlpha = 0.10 + 0.55 * (tracedCount/N_BUCKETS);
-      const alpha = baseAlpha + (1 - baseAlpha) * liftEase;
-      ctx.fillStyle = 'rgba(' + fillRGB + ',' + alpha + ')';
-      ctx.fill(shapePath);
+      // a fully solid, glossy "real" surface as it lifts free. Once the
+      // festival celebration opens up, swap in the real illustration for
+      // this stage if it's been uploaded — clipped exactly to the shape.
+      if(useImage){
+        ctx.save();
+        ctx.clip(shapePath);
+        ctx.globalAlpha = celebT;
+        drawImageCover(stageImg.img, cx, cy, R * 2.5);
+        ctx.restore();
+      } else {
+        const fillRGB = STAGES[currentStageIndex].fill;
+        const baseAlpha = 0.10 + 0.55 * (tracedCount/N_BUCKETS);
+        const alpha = baseAlpha + (1 - baseAlpha) * liftEase;
+        ctx.fillStyle = 'rgba(' + fillRGB + ',' + alpha + ')';
+        ctx.fill(shapePath);
+      }
 
-      if(liftEase > 0){
+      if(liftEase > 0 && !useImage){
         ctx.save();
         ctx.globalAlpha = 0.4 * liftEase;
         ctx.globalCompositeOperation = 'lighter';
@@ -1088,6 +1131,18 @@
     ctx.globalAlpha = a;
 
     const skyR = plateR * 1.35;
+
+    if(festivalBg.loaded){
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, skyR, 0, Math.PI*2);
+      ctx.clip();
+      drawImageCover(festivalBg.img, cx, cy, skyR * 2.05);
+      ctx.restore();
+      ctx.restore();
+      return;
+    }
+
     const sky = ctx.createRadialGradient(cx, cy - skyR*0.15, skyR*0.1, cx, cy, skyR*1.05);
     sky.addColorStop(0, '#3a2668');
     sky.addColorStop(0.42, '#26184f');
@@ -1209,7 +1264,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 18 — festival clear scene v2 (gold glow, torii, richer fireworks)';
+  const BUILD_TAG = 'BUILD 20 — real illustration support (uchiwa + festival bg)';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
