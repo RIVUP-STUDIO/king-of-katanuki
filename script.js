@@ -20,7 +20,7 @@
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
-  const INNER_WARN_PX = 5;    // a shallow dip past the line warns (yellow) instead of failing outright
+  const INNER_WARN_PX = 2;    // a shallow dip past the line warns (yellow) instead of failing outright
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -333,7 +333,7 @@
     R = W * 0.24; // shape sits smaller/roomier so the candy around it reads bigger
     // safeBand is kept proportional to R (not W) so shrinking the shape
     // doesn't change the actual difficulty — same relative tolerance as before.
-    safeBand = R * 0.0743;
+    safeBand = R * 0.055;
     needleOffset = W * 0.20;
     buildStageCache();
     draw();
@@ -543,7 +543,7 @@
     let snappedDist = dist;
     if(dist > 0.001 && Math.abs(diffRaw) < magnetRange){
       const pull = 1 - Math.abs(diffRaw) / magnetRange; // 0..1, stronger near the line
-      snappedDist = dist - diffRaw * pull * 0.72;
+      snappedDist = dist - diffRaw * pull * 0.55;
     }
     const dirX = dist > 0.001 ? dx / dist : 1;
     const dirY = dist > 0.001 ? dy / dist : 0;
