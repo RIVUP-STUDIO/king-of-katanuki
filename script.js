@@ -20,7 +20,7 @@
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
-  const INNER_WARN_PX = 2;    // a shallow dip past the line warns (yellow) instead of failing outright
+  const INNER_WARN_PX = 1;    // a shallow dip past the line warns (yellow) instead of failing outright
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -63,10 +63,11 @@
     return 1 - (t*t*(3 - 2*t)); // smoothstep falloff
   }
 
-  // うちわ: clean circle body + a straight, rounded-end handle at the bottom
+  // うちわ: clean circle body + a substantial, rounded-end handle at the
+  // bottom — sized to read clearly as "paddle + handle", not a thin spike.
   function uchiwaRadius(theta, Rb){
     let r = Rb;
-    r += Rb * 0.46 * plateauBump(theta, 90, 10, 14);
+    r += Rb * 0.48 * plateauBump(theta, 90, 11, 12);
     return r;
   }
   // 風鈴: rounded bell + tiny hanging loop on top + one long straight strip below
@@ -171,15 +172,16 @@
       if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
     }
     shapePath.closePath();
-    // The candy sits centered and large, with the shape resting roomily
-    // inside it. Start from a generous rim thickness, shrink it only as
-    // much as needed to keep the square's corners on-canvas, and as a last
-    // resort guarantee containment even if that means a thinner rim.
-    const cornerFactor = Math.pow(2, 0.5 - 1/PLATE_SQUIRCLE_N);
-    const maxCorner = W*0.485;
+    // The candy sits centered and large, with the shape resting inside it.
+    // A squircle's farthest axis-aligned reach is exactly S, at the flat
+    // edge midpoint (the corners, despite being radially farther, project
+    // to a *smaller* x/y extent) — so the only real constraint is S itself
+    // staying under the canvas half-width. Start from a generous rim
+    // thickness and shrink it only if that would run past the edge.
+    const maxEdge = W*0.48;
     let S = maxR + safeBand + W*0.09;
-    if(S*cornerFactor > maxCorner) S = maxCorner/cornerFactor;
-    S = Math.max(S, maxR + safeBand + W*0.01);
+    if(S > maxEdge) S = maxEdge;
+    S = Math.max(S, maxR + safeBand + W*0.01); // last-resort: never clip the shape
     plateR = S;
     plateEdgePath = new Path2D();
     for(let i = 0; i < N_BUCKETS; i++){
@@ -330,10 +332,10 @@
     ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
     W = size; H = size;
     cx = W/2; cy = H/2;
-    R = W * 0.24; // shape sits smaller/roomier so the candy around it reads bigger
+    R = W * 0.26; // bigger, more confident shape size
     // safeBand is kept proportional to R (not W) so shrinking the shape
     // doesn't change the actual difficulty — same relative tolerance as before.
-    safeBand = R * 0.055;
+    safeBand = R * 0.035;
     needleOffset = W * 0.20;
     buildStageCache();
     draw();
@@ -543,7 +545,7 @@
     let snappedDist = dist;
     if(dist > 0.001 && Math.abs(diffRaw) < magnetRange){
       const pull = 1 - Math.abs(diffRaw) / magnetRange; // 0..1, stronger near the line
-      snappedDist = dist - diffRaw * pull * 0.55;
+      snappedDist = dist - diffRaw * pull * 0.35;
     }
     const dirX = dist > 0.001 ? dx / dist : 1;
     const dirY = dist > 0.001 ? dy / dist : 0;
@@ -934,6 +936,16 @@
       rafId = requestAnimationFrame(loop);
     }
   }
+
+  // Small on-screen build tag — purely so it's possible to confirm at a
+  // glance (no dev tools needed) whether the deployed script.js is actually
+  // this version. Bump BUILD_TAG any time a new script.js is handed off.
+  const BUILD_TAG = 'BUILD 14 — uchiwa redesign + bigger scale';
+  const buildTagEl = document.createElement('div');
+  buildTagEl.textContent = BUILD_TAG;
+  buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
+    'color:rgba(255,255,255,0.4); z-index:9999; font-family:sans-serif; pointer-events:none;';
+  document.body.appendChild(buildTagEl);
 
   resize();
 })();
