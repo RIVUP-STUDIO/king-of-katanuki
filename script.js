@@ -20,6 +20,7 @@
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
+  const CELEBRATION_MS = 1300; // festival scene fade-in before the result screen
   const INNER_WARN_PX = 1;    // a shallow dip past the line warns (yellow) instead of failing outright
 
   // ---- stage shapes ----
@@ -71,68 +72,76 @@
     return r;
   }
   // 風鈴: rounded bell + tiny hanging loop on top + one long straight strip below
+  // 風鈴: rounder bell + clear hanging loop on top + a longer, clearly
+  // rectangular tanzaku strip with a defined neck where it meets the bell
   function furinRadius(theta, Rb){
-    let r = Rb * (1 + 0.03*Math.cos(2*theta));
-    r += Rb * 0.12 * bump(theta, -90, 10);       // small loop at the very top
-    r -= Rb * 0.10 * bump(theta, 90, 16);        // gentle waist where the strip meets the bell
-    r += Rb * 0.55 * plateauBump(theta, 90, 7, 10); // straight tanzaku strip
+    let r = Rb * (1 + 0.04*Math.cos(2*theta));
+    r += Rb * 0.14 * bump(theta, -90, 9);          // loop at the very top
+    r -= Rb * 0.14 * bump(theta, 90, 14);           // clear waist before the strip
+    r += Rb * 0.62 * plateauBump(theta, 90, 8, 9);  // long straight tanzaku strip
     return r;
   }
-  // 金魚: plump oval body + a deep, forked tail flare
+  // 金魚: egg-shaped body (fuller head, tapered tail base) + a wide, deeply
+  // forked tail — the single most recognizable goldfish cue
   function goldfishRadius(theta, Rb){
-    let r = Rb * (1 + 0.18*Math.cos(2*theta));
-    r += Rb * 0.30 * bump(theta, 180, 30);   // tail flare
-    r -= Rb * 0.18 * bump(theta, 180, 8);    // notch between the two tail points
-    r += Rb * 0.18 * bump(theta, 155, 10);   // upper tail point
-    r += Rb * 0.18 * bump(theta, 205, 10);   // lower tail point
+    let r = Rb * (1 + 0.20*Math.cos(2*theta) + 0.05*Math.cos(theta));
+    r += Rb * 0.40 * bump(theta, 180, 28);   // tail flare
+    r -= Rb * 0.24 * bump(theta, 180, 8);    // notch between the two tail points
+    r += Rb * 0.24 * bump(theta, 152, 11);   // upper tail point
+    r += Rb * 0.24 * bump(theta, 208, 11);   // lower tail point
     return r;
   }
-  // 水風船: onion/teardrop body, fuller at the bottom, small tied knot on top
+  // 水風船: fuller, more pear-like body (clearly not a plain circle) with a
+  // distinct tied knot on top
   function balloonRadius(theta, Rb){
-    let r = Rb * (1 + 0.10*Math.cos(theta - toRad(90)));
-    r -= Rb * 0.08 * bump(theta, -90, 18); // gentle pinch just below the knot
-    r += Rb * 0.16 * bump(theta, -90, 8);  // small tied knot at the very top
+    let r = Rb * (1 + 0.14*Math.cos(theta - toRad(90)) - 0.04*Math.cos(2*theta));
+    r -= Rb * 0.09 * bump(theta, -90, 16); // pinch just below the knot
+    r += Rb * 0.20 * bump(theta, -90, 7);  // small tied knot at the very top
     return r;
   }
-  // わたがし: scalloped cloud of rounded lobes + a straight stick below
+  // わたがし: bigger, clearly scalloped cloud of rounded lobes on a visible stick
   function cottonCandyRadius(theta, Rb){
-    let r = Rb * (1 + 0.16*Math.cos(7*theta));
-    r += Rb * 0.34 * plateauBump(theta, 90, 6, 8);
+    let r = Rb * (1 + 0.20*Math.cos(7*theta) + 0.05*Math.cos(3*theta+1.1));
+    r += Rb * 0.40 * plateauBump(theta, 90, 6, 8);
     return r;
   }
-  // りんご飴: round apple with a soft twin-lobe dip at the top + a straight stick
+  // りんご飴: round apple, a touch flat at the base, soft twin-lobe dip at
+  // the top where a clearly visible stick pokes through
   function candyAppleRadius(theta, Rb){
-    let r = Rb * (1 + 0.06*Math.cos(2*theta - toRad(90)));
-    r -= Rb * 0.05 * bump(theta, -90, 10); // small dip where the stem sits
-    r += Rb * 0.40 * plateauBump(theta, -90, 4, 8); // stick
+    let r = Rb * (1 + 0.05*Math.cos(2*theta - toRad(90)) + 0.04*Math.cos(theta));
+    r -= Rb * 0.06 * bump(theta, -90, 11); // dip where the stem sits
+    r += Rb * 0.46 * plateauBump(theta, -90, 4, 7); // stick
     return r;
   }
-  // 風ぐるま: 4 rounded pinwheel blades, gently swept, + a straight stick
+  // 風ぐるま: 4 clearly separated, gently swept blades + a visible stick
   function pinwheelRadius(theta, Rb){
     const lobe = (Math.cos(4*theta) + 1) / 2;
-    let r = Rb * (0.58 + 0.58*lobe);
-    r += Rb * 0.10 * Math.cos(8*theta + Math.PI/6) * lobe; // slight per-blade sweep
-    r += Rb * 0.30 * plateauBump(theta, 90, 5, 8);
+    let r = Rb * (0.50 + 0.62*lobe);
+    r += Rb * 0.13 * Math.cos(8*theta + Math.PI/6) * lobe; // per-blade sweep
+    r += Rb * 0.34 * plateauBump(theta, 90, 5, 8);
     return r;
   }
-  // お面: rounded cat-like face silhouette — two ear points, soft chin, no
-  // internal eyes/mouth lines (outer silhouette only, per the design sheet)
+  // お面: rounded cat-like face silhouette — two clear ear points, tapered
+  // cheeks, soft chin, no internal eyes/mouth lines
   function maskRadius(theta, Rb){
-    let r = Rb * (1 + 0.06*Math.cos(theta - toRad(90)));
-    r += Rb * 0.22 * bump(theta, -135, 14); // left ear
-    r += Rb * 0.22 * bump(theta, -45, 14);  // right ear
-    r -= Rb * 0.05 * bump(theta, -90, 20);  // soft dip between the ears
-    r += Rb * 0.06 * bump(theta, 90, 16);   // gentle chin point
+    let r = Rb * (1 + 0.07*Math.cos(theta - toRad(90)));
+    r += Rb * 0.30 * bump(theta, -138, 13); // left ear
+    r += Rb * 0.30 * bump(theta, -42, 13);  // right ear
+    r -= Rb * 0.09 * bump(theta, -90, 18);  // dip between the ears
+    r -= Rb * 0.07 * bump(theta, 0, 20);    // cheek taper (right)
+    r -= Rb * 0.07 * bump(theta, 180, 20);  // cheek taper (left)
+    r += Rb * 0.08 * bump(theta, 90, 15);   // soft chin point
     return r;
   }
-  // 提灯: barrel body with flat-ish caps top and bottom, per the reference silhouette
+  // 提灯: rounder barrel with clearly flat caps top and bottom and a defined
+  // neck at each — reads as a chochin silhouette, not just an oval
   function lanternRadius(theta, Rb){
-    let r = Rb * (0.62 + 0.40*Math.pow(Math.cos(theta), 2));
-    r *= (1 + 0.02*Math.cos(theta*8)); // faint rib texture
-    r -= Rb * 0.06 * bump(theta, -75, 10);
-    r -= Rb * 0.06 * bump(theta, 75, 10);
-    r += Rb * 0.14 * plateauBump(theta, -90, 8, 6); // flat top cap
-    r += Rb * 0.14 * plateauBump(theta, 90, 8, 6);  // flat bottom cap
+    let r = Rb * (0.60 + 0.44*Math.pow(Math.cos(theta), 2));
+    r *= (1 + 0.022*Math.cos(theta*8)); // faint rib texture
+    r -= Rb * 0.08 * bump(theta, -70, 10);
+    r -= Rb * 0.08 * bump(theta, 70, 10);
+    r += Rb * 0.16 * plateauBump(theta, -90, 7, 6); // flat top cap
+    r += Rb * 0.16 * plateauBump(theta, 90, 7, 6);  // flat bottom cap
     return r;
   }
 
@@ -358,6 +367,8 @@
   let clearPhaseStart = null; // timestamp when the clear "detach" sequence began
   let liftTiltSign = 1;
   let liftTriggered = false;
+  let celebTriggered = false;
+  let fireworks = [];
   let dust = [];
   let chipStartTime = new Float32Array(N_BUCKETS); // 0 = candy still intact there
   let chipFrags = []; // small candy-shell fragments flying off as it's chipped
@@ -431,6 +442,61 @@
     }
   }
 
+  // Bright little "ta-da" for the moment the festival scene opens up —
+  // a quick ascending three-note chime, distinct from the softer detach click.
+  function playCelebrationChime(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const notes = [660, 880, 1320];
+    notes.forEach((freq, i) => {
+      const t0 = now + i * 0.07;
+      const osc = audioCtx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t0);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.14, t0 + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.32);
+      osc.connect(g); g.connect(audioCtx.destination);
+      osc.start(t0); osc.stop(t0 + 0.34);
+    });
+    if(noiseBuffer){
+      const src = audioCtx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = 'highpass';
+      bp.frequency.value = 3500;
+      const g3 = audioCtx.createGain();
+      g3.gain.setValueAtTime(0, now);
+      g3.gain.linearRampToValueAtTime(0.10, now + 0.01);
+      g3.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      src.connect(bp); bp.connect(g3); g3.connect(audioCtx.destination);
+      src.start(now); src.stop(now + 0.16);
+    }
+  }
+
+  // A couple of simple firework bursts for the festival celebration —
+  // short radiating streaks that expand and fade, nothing elaborate.
+  function spawnFireworks(cx0, cy0, now){
+    const n = 22 + Math.floor(Math.random() * 6);
+    const hueSets = [
+      ['255,196,90', '255,138,61'],
+      ['255,120,150', '255,196,90'],
+      ['140,220,255', '255,255,255']
+    ];
+    const colors = hueSets[Math.floor(Math.random() * hueSets.length)];
+    const particles = [];
+    for(let i = 0; i < n; i++){
+      const ang = (i / n) * Math.PI * 2 + Math.random() * 0.2;
+      particles.push({
+        ang,
+        speed: 0.55 + Math.random() * 0.35,
+        color: colors[i % colors.length]
+      });
+    }
+    fireworks.push({ x: cx0, y: cy0, born: now, particles });
+  }
+
   function resetGame(){
     traced.fill(false);
     tracedCount = 0;
@@ -443,6 +509,8 @@
     shards = [];
     clearPhaseStart = null;
     liftTriggered = false;
+    celebTriggered = false;
+    fireworks = [];
     dust = [];
     chipStartTime.fill(0);
     chipFrags = [];
@@ -495,6 +563,8 @@
     handlePos = null;
     clearPhaseStart = performance.now();
     liftTriggered = false;
+    celebTriggered = false;
+    fireworks = [];
     dust = [];
     liftTiltSign = Math.random() < 0.5 ? -1 : 1;
     hud.classList.add('hidden');
@@ -505,7 +575,7 @@
       const isLast = currentStageIndex === STAGES.length - 1;
       nextBtn.textContent = isLast ? 'さいしょのステージへ' : 'つぎのステージへ';
       showScreen(clearScreen);
-    }, CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
+    }, CLEAR_PAUSE_MS + CLEAR_LIFT_MS + CELEBRATION_MS);
   }
 
   // ---- input ----
@@ -657,6 +727,23 @@
       vibrate(16);
       spawnDust();
     }
+
+    // ---- festival celebration timeline (starts once the lift finishes) ----
+    let celebT = 0;
+    if(clearPhaseStart !== null){
+      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
+      if(tSinceLift > 0) celebT = Math.min(1, tSinceLift / 900);
+    }
+    if(celebT > 0 && !celebTriggered){
+      celebTriggered = true;
+      playCelebrationChime();
+      vibrate([0, 12, 40, 12]);
+      spawnFireworks(cx - W*0.12, cy - W*0.16, now);
+      setTimeout(() => { if(mode === 'clearReveal') spawnFireworks(cx + W*0.14, cy - W*0.10, performance.now()); }, 380);
+    }
+    // gentle float once the piece is fully lifted and the festival opens up
+    const celebBob = celebT > 0 ? Math.sin(now / 420) * W*0.012 * celebT : 0;
+
     // gentle whole-screen zoom that breathes in then back out across the lift
     const zoomScale = clearPhaseStart !== null ? 1 + 0.045 * Math.sin(Math.PI * liftProgress) : 1;
 
@@ -665,6 +752,9 @@
     ctx.scale(zoomScale, zoomScale);
     ctx.translate(-cx, -cy);
 
+    if(celebT > 0){
+      drawFestivalScene(celebT, now);
+    } else {
     // surrounding candy: drawn as 360 individual wedges (one per bucket) so
     // each one can crumble away independently as the player carves past it,
     // instead of the whole plate fading uniformly. The outer rim follows a
@@ -728,11 +818,13 @@
         ctx.fill();
       });
     }
+    }
 
-    // the socket left behind once the piece starts lifting free
-    if(!isShattering && shapePath && liftEase > 0){
+    // the socket left behind once the piece starts lifting free (fades out
+    // once the festival scene takes over — there's no more candy to show a hole in)
+    if(!isShattering && shapePath && liftEase > 0 && celebT < 1){
       ctx.save();
-      ctx.globalAlpha = 0.85 * liftEase;
+      ctx.globalAlpha = 0.85 * liftEase * (1 - celebT);
       const holeGrad = ctx.createRadialGradient(cx, cy, R*0.1, cx, cy, R*1.05);
       holeGrad.addColorStop(0, 'rgba(40,26,10,0.55)');
       holeGrad.addColorStop(1, 'rgba(40,26,10,0.15)');
@@ -746,7 +838,7 @@
 
     if(!isShattering && shapePath){
       const maxLiftPx = Math.min(20, Math.max(10, W*0.045));
-      const liftPx = maxLiftPx * liftEase;
+      const liftPx = maxLiftPx * liftEase + celebBob;
       const tiltRad = (6 * Math.PI/180) * liftTiltSign * liftEase;
 
       ctx.save();
@@ -920,7 +1012,106 @@
       }
     }
 
+    // festival fireworks — short radiating streaks that expand and fade
+    if(fireworks.length){
+      fireworks = fireworks.filter(fw => (now - fw.born) < 900);
+      fireworks.forEach(fw => {
+        const t = (now - fw.born) / 900;
+        const alpha = Math.max(0, 1 - t);
+        const dist = t * W * 0.30;
+        fw.particles.forEach(p => {
+          const x1 = fw.x + Math.cos(p.ang) * dist * p.speed;
+          const y1 = fw.y + Math.sin(p.ang) * dist * p.speed;
+          const x0 = fw.x + Math.cos(p.ang) * dist * p.speed * 0.72;
+          const y0 = fw.y + Math.sin(p.ang) * dist * p.speed * 0.72;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.lineWidth = 2;
+          ctx.strokeStyle = 'rgba(' + p.color + ',' + alpha + ')';
+          ctx.stroke();
+        });
+      });
+    }
+
     ctx.restore(); // zoom
+
+    // brief bright flash the instant the festival scene opens up
+    if(clearPhaseStart !== null){
+      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
+      if(tSinceLift >= 0 && tSinceLift < 220){
+        const flashA = Math.max(0, 1 - tSinceLift/220) * 0.55;
+        ctx.fillStyle = 'rgba(255,247,225,' + flashA + ')';
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+  }
+
+  // A simple procedural night-festival backdrop: gradient sky, a string of
+  // glowing lanterns, a couple of stall silhouettes, a few onlookers — drawn
+  // to replace the candy plate once a stage is fully cleared.
+  function drawFestivalScene(celebT, now){
+    const a = celebT;
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    const skyR = plateR * 1.35;
+    const sky = ctx.createLinearGradient(cx, cy - skyR, cx, cy + skyR);
+    sky.addColorStop(0, '#1a1440');
+    sky.addColorStop(0.55, '#3a2358');
+    sky.addColorStop(1, '#8a3a4f');
+    ctx.beginPath();
+    ctx.arc(cx, cy, skyR, 0, Math.PI*2);
+    ctx.fillStyle = sky;
+    ctx.fill();
+
+    // lanterns strung along the top
+    const nLan = 5;
+    for(let i = 0; i < nLan; i++){
+      const t = (i + 0.5) / nLan;
+      const lx = cx - skyR*0.75 + t * skyR*1.5;
+      const ly = cy - skyR*0.62 + Math.sin(t*Math.PI)*skyR*0.06;
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, skyR*0.055, skyR*0.075, 0, 0, Math.PI*2);
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,150,70,0.95)' : 'rgba(255,90,90,0.95)';
+      ctx.shadowColor = 'rgba(255,160,90,0.9)';
+      ctx.shadowBlur = skyR*0.06;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+
+    // stalls near the bottom
+    for(let i = 0; i < 3; i++){
+      const sx = cx - skyR*0.55 + i * skyR*0.55;
+      const sy = cy + skyR*0.78;
+      const sw = skyR*0.30, sh = skyR*0.22;
+      ctx.fillStyle = 'rgba(20,14,28,0.85)';
+      ctx.fillRect(sx - sw/2, sy - sh, sw, sh);
+      ctx.beginPath();
+      ctx.moveTo(sx - sw*0.62, sy - sh);
+      ctx.lineTo(sx, sy - sh*1.55);
+      ctx.lineTo(sx + sw*0.62, sy - sh);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // small onlooker silhouettes
+    for(let i = 0; i < 4; i++){
+      const px = cx - skyR*0.5 + i * skyR*0.33 + Math.sin(i*2)*skyR*0.03;
+      const py = cy + skyR*0.92;
+      const ph = skyR*0.11;
+      ctx.fillStyle = 'rgba(15,10,20,0.8)';
+      ctx.beginPath();
+      ctx.arc(px, py - ph, ph*0.32, 0, Math.PI*2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(px - ph*0.28, py);
+      ctx.quadraticCurveTo(px, py - ph*0.85, px + ph*0.28, py);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.restore();
   }
 
   function loop(){
@@ -940,7 +1131,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 14 — uchiwa redesign + bigger scale';
+  const BUILD_TAG = 'BUILD 15 — shapes v2 + festival clear scene';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
