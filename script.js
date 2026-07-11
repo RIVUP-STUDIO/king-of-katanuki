@@ -21,7 +21,7 @@
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
   const CELEBRATION_MS = 1300; // festival scene fade-in before the result screen
-  const INNER_WARN_PX = 1;    // a shallow dip past the line warns (yellow) instead of failing outright
+  const INNER_WARN_PX = 3;    // a shallow dip past the line warns (yellow) instead of failing outright
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -64,14 +64,13 @@
     return 1 - (t*t*(3 - 2*t)); // smoothstep falloff
   }
 
-  // うちわ: clean circle body + a substantial, rounded-end handle at the
-  // bottom — sized to read clearly as "paddle + handle", not a thin spike.
+  // うちわ: clean circle body + a longer, slim, gently-flared handle,
+  // matching the reference silhouette (handle ~0.7x the body radius long).
   function uchiwaRadius(theta, Rb){
     let r = Rb;
-    r += Rb * 0.48 * plateauBump(theta, 90, 11, 12);
+    r += Rb * 0.72 * plateauBump(theta, 90, 9, 17);
     return r;
   }
-  // 風鈴: rounded bell + tiny hanging loop on top + one long straight strip below
   // 風鈴: rounder bell + clear hanging loop on top + a longer, clearly
   // rectangular tanzaku strip with a defined neck where it meets the bell
   function furinRadius(theta, Rb){
@@ -344,7 +343,7 @@
     R = W * 0.26; // bigger, more confident shape size
     // safeBand is kept proportional to R (not W) so shrinking the shape
     // doesn't change the actual difficulty — same relative tolerance as before.
-    safeBand = R * 0.035;
+    safeBand = R * 0.05;
     needleOffset = W * 0.20;
     buildStageCache();
     draw();
@@ -615,7 +614,7 @@
     let snappedDist = dist;
     if(dist > 0.001 && Math.abs(diffRaw) < magnetRange){
       const pull = 1 - Math.abs(diffRaw) / magnetRange; // 0..1, stronger near the line
-      snappedDist = dist - diffRaw * pull * 0.35;
+      snappedDist = dist - diffRaw * pull * 0.5;
     }
     const dirX = dist > 0.001 ? dx / dist : 1;
     const dirY = dist > 0.001 ? dy / dist : 0;
@@ -1131,7 +1130,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 15 — shapes v2 + festival clear scene';
+  const BUILD_TAG = 'BUILD 16 — uchiwa v3 + difficulty eased';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
