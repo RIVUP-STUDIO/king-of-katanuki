@@ -64,11 +64,11 @@
     return 1 - (t*t*(3 - 2*t)); // smoothstep falloff
   }
 
-  // うちわ: clean circle body + a longer, slim, gently-flared handle,
-  // matching the reference silhouette (handle ~0.7x the body radius long).
+  // うちわ: clean circle body + a modest, slim handle — closer to a real
+  // fan's proportions (handle noticeably shorter than the body radius).
   function uchiwaRadius(theta, Rb){
     let r = Rb;
-    r += Rb * 0.72 * plateauBump(theta, 90, 9, 17);
+    r += Rb * 0.50 * plateauBump(theta, 90, 8, 14);
     return r;
   }
   // 風鈴: rounder bell + clear hanging loop on top + a longer, clearly
@@ -737,8 +737,9 @@
       celebTriggered = true;
       playCelebrationChime();
       vibrate([0, 12, 40, 12]);
-      spawnFireworks(cx - W*0.12, cy - W*0.16, now);
-      setTimeout(() => { if(mode === 'clearReveal') spawnFireworks(cx + W*0.14, cy - W*0.10, performance.now()); }, 380);
+      spawnFireworks(cx - W*0.14, cy - W*0.18, now);
+      setTimeout(() => { if(mode === 'clearReveal') spawnFireworks(cx + W*0.15, cy - W*0.11, performance.now()); }, 320);
+      setTimeout(() => { if(mode === 'clearReveal') spawnFireworks(cx - W*0.02, cy - W*0.22, performance.now()); }, 640);
     }
     // gentle float once the piece is fully lifted and the festival opens up
     const celebBob = celebT > 0 ? Math.sin(now / 420) * W*0.012 * celebT : 0;
@@ -887,6 +888,21 @@
         ctx.restore();
       }
 
+      // golden glowing rim once the festival scene has opened up — this is
+      // the "your own mold made this world appear" moment
+      if(celebT > 0){
+        ctx.save();
+        ctx.globalAlpha = celebT;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(255,225,150,0.95)';
+        ctx.shadowColor = 'rgba(255,200,110,0.95)';
+        ctx.shadowBlur = W*0.035 * celebT;
+        ctx.lineWidth = W*0.01;
+        ctx.stroke(shapePath);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+
       // guide line: only shown while still in the mold, pre-clear
       if(clearPhaseStart === null && shapePts.length === N_BUCKETS){
         for(let i = 0; i < N_BUCKETS; i++){
@@ -1011,24 +1027,41 @@
       }
     }
 
-    // festival fireworks — short radiating streaks that expand and fade
+    // festival fireworks — radiating streaks that expand and fade, with a
+    // bright core flash and glowing tips for a richer burst
     if(fireworks.length){
-      fireworks = fireworks.filter(fw => (now - fw.born) < 900);
+      fireworks = fireworks.filter(fw => (now - fw.born) < 950);
       fireworks.forEach(fw => {
-        const t = (now - fw.born) / 900;
+        const t = (now - fw.born) / 950;
         const alpha = Math.max(0, 1 - t);
-        const dist = t * W * 0.30;
+        const dist = t * W * 0.32;
+
+        if(t < 0.18){
+          const flashA = (1 - t/0.18) * 0.8;
+          ctx.beginPath();
+          ctx.arc(fw.x, fw.y, W*0.05, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(255,250,235,' + flashA + ')';
+          ctx.fill();
+        }
+
         fw.particles.forEach(p => {
           const x1 = fw.x + Math.cos(p.ang) * dist * p.speed;
           const y1 = fw.y + Math.sin(p.ang) * dist * p.speed;
-          const x0 = fw.x + Math.cos(p.ang) * dist * p.speed * 0.72;
-          const y0 = fw.y + Math.sin(p.ang) * dist * p.speed * 0.72;
+          const x0 = fw.x + Math.cos(p.ang) * dist * p.speed * 0.68;
+          const y0 = fw.y + Math.sin(p.ang) * dist * p.speed * 0.68;
           ctx.beginPath();
           ctx.moveTo(x0, y0);
           ctx.lineTo(x1, y1);
           ctx.lineWidth = 2;
           ctx.strokeStyle = 'rgba(' + p.color + ',' + alpha + ')';
           ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(x1, y1, W*0.004, 0, Math.PI*2);
+          ctx.fillStyle = 'rgba(' + p.color + ',' + alpha + ')';
+          ctx.shadowColor = 'rgba(' + p.color + ',0.9)';
+          ctx.shadowBlur = W*0.018;
+          ctx.fill();
+          ctx.shadowBlur = 0;
         });
       });
     }
@@ -1046,51 +1079,97 @@
     }
   }
 
-  // A simple procedural night-festival backdrop: gradient sky, a string of
-  // glowing lanterns, a couple of stall silhouettes, a few onlookers — drawn
-  // to replace the candy plate once a stage is fully cleared.
+  // A procedural night-festival backdrop: deep gradient sky, a distant torii
+  // gate for depth, a string of layered-glow lanterns, warmly-lit stalls and
+  // onlookers — drawn to replace the candy plate once a stage is cleared.
   function drawFestivalScene(celebT, now){
     const a = celebT;
     ctx.save();
     ctx.globalAlpha = a;
 
     const skyR = plateR * 1.35;
-    const sky = ctx.createLinearGradient(cx, cy - skyR, cx, cy + skyR);
-    sky.addColorStop(0, '#1a1440');
-    sky.addColorStop(0.55, '#3a2358');
-    sky.addColorStop(1, '#8a3a4f');
+    const sky = ctx.createRadialGradient(cx, cy - skyR*0.15, skyR*0.1, cx, cy, skyR*1.05);
+    sky.addColorStop(0, '#3a2668');
+    sky.addColorStop(0.42, '#26184f');
+    sky.addColorStop(0.75, '#3d2258');
+    sky.addColorStop(1, '#7a3350');
     ctx.beginPath();
     ctx.arc(cx, cy, skyR, 0, Math.PI*2);
     ctx.fillStyle = sky;
     ctx.fill();
 
-    // lanterns strung along the top
-    const nLan = 5;
+    // a warm horizon glow near the bottom, like distant festival light
+    const horizon = ctx.createRadialGradient(cx, cy + skyR*0.55, skyR*0.05, cx, cy + skyR*0.55, skyR*0.85);
+    horizon.addColorStop(0, 'rgba(255,150,80,0.35)');
+    horizon.addColorStop(1, 'rgba(255,150,80,0)');
+    ctx.beginPath();
+    ctx.arc(cx, cy, skyR, 0, Math.PI*2);
+    ctx.fillStyle = horizon;
+    ctx.fill();
+
+    // distant torii gate — a simple iconic silhouette for depth/place
+    ctx.save();
+    ctx.globalAlpha = a * 0.55;
+    const tx = cx, ty = cy + skyR*0.18, tw = skyR*0.30, th = skyR*0.34;
+    ctx.strokeStyle = 'rgba(15,8,20,0.9)';
+    ctx.lineWidth = skyR*0.028;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(tx - tw*0.42, ty + th); ctx.lineTo(tx - tw*0.5, ty - th*0.15);
+    ctx.moveTo(tx + tw*0.42, ty + th); ctx.lineTo(tx + tw*0.5, ty - th*0.15);
+    ctx.moveTo(tx - tw*0.62, ty - th*0.25); ctx.lineTo(tx + tw*0.62, ty - th*0.25);
+    ctx.moveTo(tx - tw*0.55, ty - th*0.45); ctx.lineTo(tx + tw*0.55, ty - th*0.45);
+    ctx.stroke();
+    ctx.restore();
+
+    // lanterns strung along the top, warm layered glow (bloom via 2 passes)
+    const nLan = 6;
     for(let i = 0; i < nLan; i++){
       const t = (i + 0.5) / nLan;
-      const lx = cx - skyR*0.75 + t * skyR*1.5;
-      const ly = cy - skyR*0.62 + Math.sin(t*Math.PI)*skyR*0.06;
+      const lx = cx - skyR*0.78 + t * skyR*1.56;
+      const ly = cy - skyR*0.60 + Math.sin(t*Math.PI)*skyR*0.08;
+      const hue = i % 2 === 0 ? '255,140,60' : '255,95,95';
+      // outer soft bloom
       ctx.beginPath();
-      ctx.ellipse(lx, ly, skyR*0.055, skyR*0.075, 0, 0, Math.PI*2);
-      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,150,70,0.95)' : 'rgba(255,90,90,0.95)';
-      ctx.shadowColor = 'rgba(255,160,90,0.9)';
-      ctx.shadowBlur = skyR*0.06;
+      ctx.ellipse(lx, ly, skyR*0.10, skyR*0.13, 0, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(' + hue + ',0.22)';
+      ctx.fill();
+      // lantern body
+      ctx.beginPath();
+      ctx.ellipse(lx, ly, skyR*0.052, skyR*0.072, 0, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(' + hue + ',0.97)';
+      ctx.shadowColor = 'rgba(' + hue + ',1)';
+      ctx.shadowBlur = skyR*0.09;
       ctx.fill();
       ctx.shadowBlur = 0;
+      // thin cap lines top/bottom
+      ctx.strokeStyle = 'rgba(30,15,10,0.6)';
+      ctx.lineWidth = skyR*0.006;
+      ctx.beginPath();
+      ctx.moveTo(lx - skyR*0.03, ly - skyR*0.065); ctx.lineTo(lx + skyR*0.03, ly - skyR*0.065);
+      ctx.moveTo(lx - skyR*0.03, ly + skyR*0.065); ctx.lineTo(lx + skyR*0.03, ly + skyR*0.065);
+      ctx.stroke();
     }
 
-    // stalls near the bottom
+    // stalls near the bottom, with a warm lit-interior glow
     for(let i = 0; i < 3; i++){
       const sx = cx - skyR*0.55 + i * skyR*0.55;
       const sy = cy + skyR*0.78;
       const sw = skyR*0.30, sh = skyR*0.22;
-      ctx.fillStyle = 'rgba(20,14,28,0.85)';
+      ctx.beginPath();
+      ctx.ellipse(sx, sy - sh*0.5, sw*0.75, sh*0.9, 0, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,150,70,0.16)';
+      ctx.fill();
+      ctx.fillStyle = 'rgba(20,14,28,0.88)';
       ctx.fillRect(sx - sw/2, sy - sh, sw, sh);
+      ctx.fillStyle = 'rgba(255,170,90,0.55)';
+      ctx.fillRect(sx - sw*0.42, sy - sh*0.92, sw*0.84, sh*0.14);
       ctx.beginPath();
       ctx.moveTo(sx - sw*0.62, sy - sh);
       ctx.lineTo(sx, sy - sh*1.55);
       ctx.lineTo(sx + sw*0.62, sy - sh);
       ctx.closePath();
+      ctx.fillStyle = 'rgba(20,14,28,0.88)';
       ctx.fill();
     }
 
@@ -1130,7 +1209,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 16 — uchiwa v3 + difficulty eased';
+  const BUILD_TAG = 'BUILD 18 — festival clear scene v2 (gold glow, torii, richer fireworks)';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
