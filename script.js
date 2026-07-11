@@ -172,15 +172,15 @@
   // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
     { name:'日の丸',   key:'hinomaru',   shapeFn:(th,Rb)=>Rb,     fill:'188,0,45',   difficulty:1 },
-    { name:'風鈴',     key:'furin',      shapeFn:furinRadius,      fill:'90,170,220', difficulty:2 },
-    { name:'うちわ',   key:'uchiwa',     shapeFn:uchiwaRadius,     fill:'255,150,90', difficulty:1 },
-    { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:2 },
-    { name:'水風船',   key:'mizufusen',  shapeFn:balloonRadius,    fill:'110,190,255',difficulty:2 },
-    { name:'わたがし', key:'watagashi',  shapeFn:cottonCandyRadius,fill:'255,170,210',difficulty:3 },
+    { name:'風鈴',     key:'furin',      shapeFn:furinRadius,      fill:'90,170,220', difficulty:3 },
+    { name:'うちわ',   key:'uchiwa',     shapeFn:uchiwaRadius,     fill:'255,150,90', difficulty:3 },
+    { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:5 },
+    { name:'水風船',   key:'mizufusen',  shapeFn:balloonRadius,    fill:'110,190,255',difficulty:1 },
+    { name:'わたがし', key:'watagashi',  shapeFn:cottonCandyRadius,fill:'255,170,210',difficulty:2 },
     { name:'りんご飴', key:'ringoame',   shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
-    { name:'風ぐるま', key:'kazaguruma', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:3 },
-    { name:'お面',     key:'omen',       shapeFn:maskRadius,       fill:'250,225,190',difficulty:4 },
-    { name:'提灯',     key:'chochin',    shapeFn:lanternRadius,    fill:'255,138,61', difficulty:4 }
+    { name:'風ぐるま', key:'kazaguruma', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:4 },
+    { name:'お面',     key:'omen',       shapeFn:maskRadius,       fill:'250,225,190',difficulty:2 },
+    { name:'提灯',     key:'chochin',    shapeFn:lanternRadius,    fill:'255,138,61', difficulty:2 }
   ];
 
   // ---- clear-scene image assets ----
@@ -1330,7 +1330,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 25 — cleared-stage badge on stage select';
+  const BUILD_TAG = 'BUILD 26 — difficulty stars re-ranked';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
