@@ -131,6 +131,43 @@
     return Rb * FURIN_SHAPE_RATIOS[idx];
   }
 
+  // ---- clear-record tracking (persisted in the browser via localStorage) ----
+  const CLEAR_STORAGE_KEY = 'kok_cleared_stages_v1';
+  function loadClearedStages(){
+    try{
+      const raw = localStorage.getItem(CLEAR_STORAGE_KEY);
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    }catch(e){ return new Set(); }
+  }
+  function markStageCleared(key){
+    try{
+      const set = loadClearedStages();
+      if(set.has(key)) return false; // already recorded, nothing changed
+      set.add(key);
+      localStorage.setItem(CLEAR_STORAGE_KEY, JSON.stringify([...set]));
+      return true;
+    }catch(e){ return false; }
+  }
+
+  // Small stylesheet for the "クリア済み" badge on the stage list — injected
+  // here so everything stays in this one file.
+  (function injectClearBadgeStyles(){
+    const style = document.createElement('style');
+    style.textContent = `
+      .stageBtn{ position: relative; }
+      .stageClearedBadge{
+        display:none;
+        align-items:center; gap:4px;
+        font-size:10px; font-weight:900; letter-spacing:1px;
+        color:#1a0e04; background: linear-gradient(180deg, var(--safe,#3fe08a), #23a866);
+        padding:2px 7px; border-radius:999px;
+        margin-top:3px;
+      }
+      .stageBtn.isCleared .stageClearedBadge{ display:inline-flex; }
+      .stageBtn.isCleared .num{ background: var(--safe,#3fe08a); }
+    `;
+    document.head.appendChild(style);
+  })();
 
   // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
@@ -279,15 +316,19 @@
 
   function renderStageList(){
     stageList.innerHTML = '';
+    const cleared = loadClearedStages();
     STAGES.forEach((s, i) => {
       const btn = document.createElement('button');
-      btn.className = 'stageBtn';
+      btn.className = 'stageBtn' + (cleared.has(s.key) ? ' isCleared' : '');
       const stars = '★'.repeat(s.difficulty) + '☆'.repeat(5 - s.difficulty);
       btn.innerHTML =
         '<span class="num">' + (i+1) + '</span>' +
         '<canvas class="thumb"></canvas>' +
         '<span class="stageInfo"><span class="stageName">' + s.name + '</span>' +
-        '<span class="stageStars">' + stars + '</span></span>';
+        '<span class="stageStars">' + stars + '</span>' +
+        '<span class="stageClearedBadge">✓ クリア済み</span></span>';
+      // Cleared or not, every stage stays fully playable — the badge is
+      // just a record, never a lock.
       btn.addEventListener('click', () => startGame(i));
       stageList.appendChild(btn);
       drawStageThumb(btn.querySelector('canvas.thumb'), s);
@@ -588,6 +629,7 @@
     mode = 'title';
     hud.classList.add('hidden');
     legend.classList.add('hidden');
+    renderStageList();
     showScreen(titleScreen);
   }
 
@@ -608,6 +650,7 @@
 
   function clearGame(){
     mode = 'clearReveal';
+    markStageCleared(STAGES[currentStageIndex].key);
     needle = null;
     handlePos = null;
     clearPhaseStart = performance.now();
@@ -1287,7 +1330,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 24 — difficulty eased slightly';
+  const BUILD_TAG = 'BUILD 25 — cleared-stage badge on stage select';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
