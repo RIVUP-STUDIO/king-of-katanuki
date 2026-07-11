@@ -16,7 +16,7 @@
   const clearTimeEl = document.getElementById('clearTime');
   const needleName = document.getElementById('needleName');
 
-  let W, H, cx, cy, R, safeBand, needleOffset;
+  let W, H, cx, cy, R, safeBand, needleOffset, plateR;
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
@@ -34,6 +34,14 @@
     if(d < -Math.PI) d += Math.PI*2;
     return d;
   }
+  // Distance from center to a rounded-square boundary at angle theta, given
+  // the square's edge-midpoint half-width S. Higher n = sharper corners;
+  // n=5 reads clearly as "square" while keeping the corners soft/rounded.
+  const PLATE_SQUIRCLE_N = 5;
+  function squircleRadius(theta, S, n){
+    const c = Math.abs(Math.cos(theta)), s = Math.abs(Math.sin(theta));
+    return S / Math.pow(Math.pow(c, n) + Math.pow(s, n), 1/n);
+  }
   // Smooth localized bump (0..1) centered on centerDeg, used to add small
   // features (a handle, a knot, a fin) without making the outline jagged.
   function bump(theta, centerDeg, widthDeg){
@@ -41,60 +49,89 @@
     const d = angDiff(theta, c);
     return Math.exp(-(d*d) / (2*w*w));
   }
+  // Flat-topped bump (0..1): stays at 1 across the "halfWidthDeg" core, then
+  // eases down to 0 over "edgeDeg". Used for handles/sticks/caps that should
+  // read as a straight rod with a rounded end, not a soft Gaussian thorn —
+  // matching the design sheet's clean, deliberate strokes.
+  function plateauBump(theta, centerDeg, halfWidthDeg, edgeDeg){
+    const c = toRad(centerDeg);
+    const d = Math.abs(angDiff(theta, c));
+    const hw = toRad(halfWidthDeg), edge = toRad(edgeDeg);
+    if(d <= hw) return 1;
+    if(d >= hw + edge) return 0;
+    const t = (d - hw) / edge;
+    return 1 - (t*t*(3 - 2*t)); // smoothstep falloff
+  }
 
-  function furinRadius(theta, Rb){ // 風鈴: round glass bell + one hanging strip
-    let r = Rb * (1 + 0.05*Math.cos(2*theta));
-    r += Rb * 0.85 * bump(theta, 90, 11); // tanzaku strip hanging straight down
-    return r;
-  }
-  function uchiwaRadius(theta, Rb){ // うちわ: round paddle + straight handle
-    let r = Rb * (1 + 0.10*Math.cos(2*(theta + Math.PI/2)));
-    r += Rb * 1.05 * bump(theta, 90, 9); // handle
-    return r;
-  }
-  function goldfishRadius(theta, Rb){ // 金魚: oval body + forked tail
-    let r = Rb * (1 + 0.15*Math.cos(2*theta));
-    r += Rb * 0.35 * bump(theta, 180, 35);
-    r -= Rb * 0.20 * bump(theta, 180, 9);
-    r += Rb * 0.16 * bump(theta, 160, 8);
-    r += Rb * 0.16 * bump(theta, 200, 8);
-    return r;
-  }
-  function balloonRadius(theta, Rb){ // 水風船: round + small tied knot on top
+  // うちわ: clean circle body + a straight, rounded-end handle at the bottom
+  function uchiwaRadius(theta, Rb){
     let r = Rb;
-    r += Rb * 0.16 * bump(theta, -90, 9);
+    r += Rb * 0.46 * plateauBump(theta, 90, 10, 14);
     return r;
   }
-  function cottonCandyRadius(theta, Rb){ // わたがし: fluffy poof on a thin stick
-    let r = Rb * (1 + 0.06*Math.cos(5*theta+0.6) + 0.05*Math.cos(7*theta+1.3) + 0.04*Math.cos(3*theta+2.0));
-    r += Rb * 0.55 * bump(theta, 90, 6);
+  // 風鈴: rounded bell + tiny hanging loop on top + one long straight strip below
+  function furinRadius(theta, Rb){
+    let r = Rb * (1 + 0.03*Math.cos(2*theta));
+    r += Rb * 0.12 * bump(theta, -90, 10);       // small loop at the very top
+    r -= Rb * 0.10 * bump(theta, 90, 16);        // gentle waist where the strip meets the bell
+    r += Rb * 0.55 * plateauBump(theta, 90, 7, 10); // straight tanzaku strip
     return r;
   }
-  function candyAppleRadius(theta, Rb){ // りんご飴: round apple + stick on top
+  // 金魚: plump oval body + a deep, forked tail flare
+  function goldfishRadius(theta, Rb){
+    let r = Rb * (1 + 0.18*Math.cos(2*theta));
+    r += Rb * 0.30 * bump(theta, 180, 30);   // tail flare
+    r -= Rb * 0.18 * bump(theta, 180, 8);    // notch between the two tail points
+    r += Rb * 0.18 * bump(theta, 155, 10);   // upper tail point
+    r += Rb * 0.18 * bump(theta, 205, 10);   // lower tail point
+    return r;
+  }
+  // 水風船: onion/teardrop body, fuller at the bottom, small tied knot on top
+  function balloonRadius(theta, Rb){
+    let r = Rb * (1 + 0.10*Math.cos(theta - toRad(90)));
+    r -= Rb * 0.08 * bump(theta, -90, 18); // gentle pinch just below the knot
+    r += Rb * 0.16 * bump(theta, -90, 8);  // small tied knot at the very top
+    return r;
+  }
+  // わたがし: scalloped cloud of rounded lobes + a straight stick below
+  function cottonCandyRadius(theta, Rb){
+    let r = Rb * (1 + 0.16*Math.cos(7*theta));
+    r += Rb * 0.34 * plateauBump(theta, 90, 6, 8);
+    return r;
+  }
+  // りんご飴: round apple with a soft twin-lobe dip at the top + a straight stick
+  function candyAppleRadius(theta, Rb){
     let r = Rb * (1 + 0.06*Math.cos(2*theta - toRad(90)));
-    r += Rb * 0.42 * bump(theta, -90, 6);
+    r -= Rb * 0.05 * bump(theta, -90, 10); // small dip where the stem sits
+    r += Rb * 0.40 * plateauBump(theta, -90, 4, 8); // stick
     return r;
   }
-  function pinwheelRadius(theta, Rb){ // 風ぐるま: 4 rounded blades + small stick
-    const blade = (Math.cos(4*theta) + 1) / 2;
-    let r = Rb * (0.55 + 0.55*blade);
-    r += Rb * 0.35 * bump(theta, 90, 6);
+  // 風ぐるま: 4 rounded pinwheel blades, gently swept, + a straight stick
+  function pinwheelRadius(theta, Rb){
+    const lobe = (Math.cos(4*theta) + 1) / 2;
+    let r = Rb * (0.58 + 0.58*lobe);
+    r += Rb * 0.10 * Math.cos(8*theta + Math.PI/6) * lobe; // slight per-blade sweep
+    r += Rb * 0.30 * plateauBump(theta, 90, 5, 8);
     return r;
   }
-  function maskRadius(theta, Rb){ // お面: outer face silhouette only
-    let r = Rb * (1 + 0.05*Math.cos(theta - toRad(90)));
-    r += Rb * 0.10 * bump(theta, 90, 12);   // gentle chin point
-    r -= Rb * 0.06 * bump(theta, 0, 18);    // cheek taper (right)
-    r -= Rb * 0.06 * bump(theta, 180, 18);  // cheek taper (left)
+  // お面: rounded cat-like face silhouette — two ear points, soft chin, no
+  // internal eyes/mouth lines (outer silhouette only, per the design sheet)
+  function maskRadius(theta, Rb){
+    let r = Rb * (1 + 0.06*Math.cos(theta - toRad(90)));
+    r += Rb * 0.22 * bump(theta, -135, 14); // left ear
+    r += Rb * 0.22 * bump(theta, -45, 14);  // right ear
+    r -= Rb * 0.05 * bump(theta, -90, 20);  // soft dip between the ears
+    r += Rb * 0.06 * bump(theta, 90, 16);   // gentle chin point
     return r;
   }
-  function lanternRadius(theta, Rb){ // 提灯: barrel body, pinched neck, cap knobs
-    let r = Rb * (0.68 + 0.42*Math.pow(Math.cos(theta), 2));
-    r *= (1 + 0.025*Math.cos(theta*8));
-    r -= Rb * 0.10 * bump(theta, -72, 10);
-    r -= Rb * 0.10 * bump(theta, 72, 10);
-    r += Rb * 0.20 * bump(theta, -90, 7);
-    r += Rb * 0.20 * bump(theta, 90, 7);
+  // 提灯: barrel body with flat-ish caps top and bottom, per the reference silhouette
+  function lanternRadius(theta, Rb){
+    let r = Rb * (0.62 + 0.40*Math.pow(Math.cos(theta), 2));
+    r *= (1 + 0.02*Math.cos(theta*8)); // faint rib texture
+    r -= Rb * 0.06 * bump(theta, -75, 10);
+    r -= Rb * 0.06 * bump(theta, 75, 10);
+    r += Rb * 0.14 * plateauBump(theta, -90, 8, 6); // flat top cap
+    r += Rb * 0.14 * plateauBump(theta, 90, 8, 6);  // flat bottom cap
     return r;
   }
 
@@ -113,6 +150,8 @@
   ];
   let currentStageIndex = 0;
   let targetRCache = new Float32Array(N_BUCKETS);
+  let plateEdgeCache = new Float32Array(N_BUCKETS);
+  let plateEdgePath = null;
   let shapePts = [];
   let shapePath = null;
 
@@ -120,16 +159,37 @@
     const stage = STAGES[currentStageIndex];
     shapePts = [];
     shapePath = new Path2D();
+    let maxR = 0;
     for(let i = 0; i < N_BUCKETS; i++){
       const a = (i / N_BUCKETS) * Math.PI * 2;
       const r = stage.shapeFn(a, R);
       targetRCache[i] = r;
+      if(r > maxR) maxR = r;
       const x = cx + r * Math.cos(a);
       const y = cy + r * Math.sin(a);
       shapePts.push({x, y});
       if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
     }
     shapePath.closePath();
+    // The candy sits centered and large, with the shape resting roomily
+    // inside it. Start from a generous rim thickness, shrink it only as
+    // much as needed to keep the square's corners on-canvas, and as a last
+    // resort guarantee containment even if that means a thinner rim.
+    const cornerFactor = Math.pow(2, 0.5 - 1/PLATE_SQUIRCLE_N);
+    const maxCorner = W*0.485;
+    let S = maxR + safeBand + W*0.09;
+    if(S*cornerFactor > maxCorner) S = maxCorner/cornerFactor;
+    S = Math.max(S, maxR + safeBand + W*0.01);
+    plateR = S;
+    plateEdgePath = new Path2D();
+    for(let i = 0; i < N_BUCKETS; i++){
+      const a = (i / N_BUCKETS) * Math.PI * 2;
+      const er = squircleRadius(a, plateR, PLATE_SQUIRCLE_N);
+      plateEdgeCache[i] = er;
+      const x = cx + er * Math.cos(a), y = cy + er * Math.sin(a);
+      if(i === 0) plateEdgePath.moveTo(x, y); else plateEdgePath.lineTo(x, y);
+    }
+    plateEdgePath.closePath();
   }
 
   // Small silhouette preview drawn inside each stage-select button.
@@ -213,8 +273,56 @@
     }
   }
 
+  // One or two small candy-shell fragments knocked loose at the spot the
+  // player just carved — this is what sells "you're breaking the candy
+  // around the mold", not just tracing a line.
+  function spawnChipFragment(bucket, now){
+    if(!shapePts.length) return;
+    const a = (bucket / N_BUCKETS) * Math.PI * 2;
+    const innerR = targetRCache[bucket];
+    const edgeR = plateEdgeCache[bucket];
+    const originR = innerR + (edgeR - innerR) * (0.35 + Math.random()*0.3);
+    const x = cx + originR * Math.cos(a);
+    const y = cy + originR * Math.sin(a);
+    const outDirX = Math.cos(a), outDirY = Math.sin(a);
+    const n = 1 + (Math.random() < 0.4 ? 1 : 0); // mostly 1, sometimes 2
+    for(let k = 0; k < n; k++){
+      chipFrags.push({
+        x, y,
+        vx: outDirX * (W*0.05 + Math.random()*W*0.05) + (Math.random()-0.5)*W*0.03,
+        vy: outDirY * (W*0.05 + Math.random()*W*0.05) + (Math.random()-0.5)*W*0.03,
+        size: W*0.005 + Math.random()*W*0.006,
+        born: now
+      });
+    }
+  }
+
+  // ---- sound-effect hooks -------------------------------------------------
+  // Every game sound is funneled through one of these named functions, each
+  // synthesized with Web Audio so no external files are required. To swap
+  // in real recorded SFX later, just replace a function body with something
+  // like `new Audio('sfx/chip.mp3').play()` — call sites elsewhere never
+  // need to change.
+  function playChipBreak(){
+    if(!audioCtx || !noiseBuffer) return;
+    const now = audioCtx.currentTime;
+    const src = audioCtx.createBufferSource();
+    src.buffer = noiseBuffer;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2200 + Math.random() * 2200;
+    bp.Q.value = 4;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.11, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    src.connect(bp); bp.connect(gain); gain.connect(audioCtx.destination);
+    src.start(now);
+    src.stop(now + 0.06);
+  }
+
   function resize(){
-    const size = Math.min(window.innerWidth, window.innerHeight) * 0.86;
+    const size = Math.min(window.innerWidth, window.innerHeight) * 0.95;
     canvas.width = size * devicePixelRatio;
     canvas.height = size * devicePixelRatio;
     canvas.style.width = size + 'px';
@@ -222,8 +330,10 @@
     ctx.setTransform(devicePixelRatio,0,0,devicePixelRatio,0,0);
     W = size; H = size;
     cx = W/2; cy = H/2;
-    R = W * 0.30;
-    safeBand = W * 0.0223;
+    R = W * 0.24; // shape sits smaller/roomier so the candy around it reads bigger
+    // safeBand is kept proportional to R (not W) so shrinking the shape
+    // doesn't change the actual difficulty — same relative tolerance as before.
+    safeBand = R * 0.0743;
     needleOffset = W * 0.20;
     buildStageCache();
     draw();
@@ -247,6 +357,9 @@
   let liftTiltSign = 1;
   let liftTriggered = false;
   let dust = [];
+  let chipStartTime = new Float32Array(N_BUCKETS); // 0 = candy still intact there
+  let chipFrags = []; // small candy-shell fragments flying off as it's chipped
+  const CHIP_DURATION_MS = 380; // how long one wedge takes to visibly crumble away
 
   function vibrate(pattern){
     if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} }
@@ -329,6 +442,8 @@
     clearPhaseStart = null;
     liftTriggered = false;
     dust = [];
+    chipStartTime.fill(0);
+    chipFrags = [];
     progressBar.style.width = '0%';
     timerEl.textContent = '0.0s';
   }
@@ -454,21 +569,35 @@
     }
 
     if(newState === 'green'){
+      const now = performance.now();
       const base = Math.round(angleDeg);
+      let chippedThisMove = false;
       for(let i = -2; i <= 2; i++){
         const b = (base + i + N_BUCKETS) % N_BUCKETS;
-        if(!traced[b]){ traced[b] = true; tracedCount++; }
+        if(!traced[b]){
+          traced[b] = true;
+          tracedCount++;
+        }
+        // Kick off the surrounding candy's crumble at this spot the first
+        // time it's reached, even if it was already "traced" a moment ago
+        // by a neighboring pass — the erosion itself only ever starts once.
+        if(chipStartTime[b] === 0){
+          chipStartTime[b] = now;
+          spawnChipFragment(b, now);
+          chippedThisMove = true;
+        }
       }
       const pct = (tracedCount / N_BUCKETS) * 100;
       progressBar.style.width = pct.toFixed(1) + '%';
 
-      // continuous "kari-kari" scratch sound + light vibration while carving
-      const now = performance.now();
+      // continuous "kari-kari" scratch sound + light vibration while carving,
+      // plus a sharper little "break" tick whenever candy actually chips off
       if(now - lastScratchAt > 90){
         lastScratchAt = now;
         playScratch();
         vibrate(5);
       }
+      if(chippedThisMove) playChipBreak();
 
       // Clear condition is intentionally strict: every bucket of the line
       // must be traced. No partial-completion shortcut.
@@ -534,18 +663,69 @@
     ctx.scale(zoomScale, zoomScale);
     ctx.translate(-cx, -cy);
 
-    // candy base plate (washi paper look)
-    const plateR = R + safeBand + W*0.09;
-    const grad = ctx.createRadialGradient(cx, cy - plateR*0.2, plateR*0.1, cx, cy, plateR);
+    // surrounding candy: drawn as 360 individual wedges (one per bucket) so
+    // each one can crumble away independently as the player carves past it,
+    // instead of the whole plate fading uniformly. The outer rim follows a
+    // rounded square rather than a circle.
+    const grad = ctx.createRadialGradient(cx, cy - plateR*0.2, plateR*0.1, cx, cy, plateR*1.18);
     grad.addColorStop(0, '#fffaf0');
     grad.addColorStop(1, '#e7d9ad');
-    ctx.beginPath();
-    ctx.arc(cx, cy, plateR, 0, Math.PI*2);
-    ctx.fillStyle = grad;
-    ctx.fill();
+    if(shapePts.length === N_BUCKETS){
+      for(let i = 0; i < N_BUCKETS; i++){
+        const innerR = targetRCache[i];
+        const edgeR = plateEdgeCache[i];
+        let outerR = edgeR;
+        if(chipStartTime[i] > 0){
+          const cp = Math.min(1, (now - chipStartTime[i]) / CHIP_DURATION_MS);
+          const cpEase = 1 - Math.pow(1 - cp, 2); // eases into the crumble
+          outerR = edgeR - (edgeR - innerR) * cpEase;
+        }
+        if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
+        const a0 = (i / N_BUCKETS) * Math.PI * 2;
+        const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx + innerR*Math.cos(a0), cy + innerR*Math.sin(a0));
+        ctx.lineTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+        ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+        ctx.lineTo(cx + innerR*Math.cos(a1), cy + innerR*Math.sin(a1));
+        ctx.arc(cx, cy, innerR, a1, a0, true);
+        ctx.closePath();
+        ctx.fillStyle = grad;
+        ctx.fill();
+        if(outerR < edgeR - 1){
+          // a crumbling wedge shows a rougher, darker broken edge
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+          ctx.beginPath();
+          ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+          ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+          ctx.stroke();
+        }
+      }
+    } else if(plateEdgePath){
+      // fallback (very first frame before the stage cache exists)
+      ctx.fillStyle = grad;
+      ctx.fill(plateEdgePath);
+    }
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(120,90,40,0.25)';
-    ctx.stroke();
+    ctx.strokeStyle = 'rgba(120,90,40,0.18)';
+    if(plateEdgePath) ctx.stroke(plateEdgePath);
+
+    // candy-shell fragments knocked loose as the surrounding candy chips away
+    if(chipFrags.length){
+      const g = W * 0.7;
+      chipFrags = chipFrags.filter(f => (now - f.born) < 550);
+      chipFrags.forEach(f => {
+        const ts = (now - f.born) / 1000;
+        const a = Math.max(0, 1 - ts/0.55);
+        const x = f.x + f.vx*ts;
+        const y = f.y + f.vy*ts + 0.5*g*ts*ts;
+        ctx.beginPath();
+        ctx.arc(x, y, f.size, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(231,217,173,' + (a*0.9) + ')';
+        ctx.fill();
+      });
+    }
 
     // the socket left behind once the piece starts lifting free
     if(!isShattering && shapePath && liftEase > 0){
