@@ -204,12 +204,13 @@
       localStorage.setItem(ALBUM_STORAGE_PREFIX + gameMode, JSON.stringify(album));
       showSavedToast();
       renderAlbumGrid();
+      refreshAlbumButton();
     }catch(e){ /* storage unavailable/full — never let this break the game */ }
   }
   function showSavedToast(){
     const t = document.createElement('div');
     t.className = 'kokToast';
-    t.textContent = '📸 アルバムに保存しました';
+    t.textContent = 'アルバムに保存しました';
     document.body.appendChild(t);
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 2200);
@@ -273,7 +274,7 @@
           <span class="albumCardGrade ${rec.gradeCls}">${rec.grade}</span>`;
         card.addEventListener('click', () => openAlbumDetail(rec, s));
       } else {
-        card.innerHTML = `<span class="albumLockedIcon">🔒</span>
+        card.innerHTML = `<span class="albumLockedIcon"><span class="lockShackle"></span><span class="lockBody"></span></span>
           <span class="albumCardName">${s.name}</span>
           <span class="albumCardGrade">未クリア</span>`;
       }
@@ -294,6 +295,7 @@
         <div class="albumDetailStars">${stars}</div>
         <div class="albumDetailRow">クリアタイム: ${rec.time.toFixed(2)}s</div>
         <div class="albumDetailRow">${dateStr}</div>
+        <div class="albumTitlesRow">称号 — 今後追加予定</div>
       </div>
     `;
     document.getElementById('albumDetailClose').addEventListener('click', () => {
@@ -302,30 +304,56 @@
     albumDetail.classList.remove('hidden');
   }
 
-  // Small stylesheet for the "クリア済み" badge on the stage list — injected
-  // here so everything stays in this one file.
+  // Luxury dark-glass restyle for the stage list — injected here so
+  // everything stays in this one file.
   (function injectClearBadgeStyles(){
     const style = document.createElement('style');
     style.textContent = `
-      .stageBtn{ position: relative; }
-      .stageClearedBadge{
-        display:none;
-        align-items:center; gap:4px;
-        font-size:10px; font-weight:900; letter-spacing:1px;
-        color:#1a0e04; background: linear-gradient(180deg, var(--safe,#3fe08a), #23a866);
-        padding:2px 7px; border-radius:999px;
-        margin-top:3px;
+      .stageBtn{
+        position: relative;
+        background: linear-gradient(155deg, rgba(40,28,18,0.9), rgba(18,12,10,0.92)) !important;
+        border: 1px solid rgba(255,205,120,0.28) !important;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
       }
-      .stageBtn.isCleared .stageClearedBadge{ display:inline-flex; }
-      .stageBtn.isCleared .num{ background: var(--safe,#3fe08a); }
+      .stageBtn.isCleared{ border-color: rgba(255,205,120,0.6) !important; }
+      .stageBtn .num{
+        background: linear-gradient(180deg, #ffcf7a, #c98a2e) !important;
+        color:#1a0e04 !important;
+        box-shadow: 0 0 6px rgba(255,205,120,0.5);
+      }
+      .stageBestTime{
+        display:block; font-size:10px; letter-spacing:1px;
+        color: rgba(255,210,140,0.75); margin-top:2px; font-weight:700;
+      }
+      .stageClearStamp{
+        display:none;
+        position:absolute; top:8px; right:10px;
+        font-size:9px; font-weight:900; letter-spacing:1.5px;
+        color:#2a1608;
+        background: linear-gradient(180deg, #ffe9b8, #d9a54a);
+        padding:2px 7px; border-radius:5px;
+        box-shadow: 0 0 8px rgba(255,205,120,0.5);
+        transform: rotate(4deg);
+      }
+      .stageBtn.isCleared .stageClearStamp{ display:block; }
 
       .albumOpenBtn{
         margin-top:2px; margin-bottom:10px;
+        width:min(84vw, 320px);
+        display:flex; align-items:center; justify-content:space-between; gap:10px;
         font-family:'Zen Kaku Gothic New', sans-serif;
-        font-weight:700; font-size:13px; letter-spacing:1px;
-        padding:9px 20px; border-radius:999px;
-        border:1px solid rgba(255,200,140,0.5);
-        background:rgba(255,180,100,0.12); color:#fbf3df;
+        font-weight:700; font-size:12px; letter-spacing:1px;
+        padding:11px 16px; border-radius:14px;
+        border:1px solid rgba(255,205,120,0.4);
+        background: linear-gradient(155deg, rgba(40,28,18,0.9), rgba(18,12,10,0.92));
+        color:#fbf3df;
+      }
+      .albumOpenBtn .albumProgressTrack{
+        flex:1; height:5px; border-radius:99px; background:rgba(255,255,255,0.1);
+        margin:0 10px; overflow:hidden;
+      }
+      .albumOpenBtn .albumProgressFill{
+        height:100%; background: linear-gradient(90deg, #d9a54a, #ffe9b8);
       }
       .modeToggleWrap{
         display:flex; gap:4px; margin-bottom:14px; width:min(84vw, 320px);
@@ -360,13 +388,27 @@
       }
       .albumCard img{ width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px; }
       .albumCard.locked{ opacity:0.45; }
-      .albumLockedIcon{ font-size:28px; padding:20px 0; }
+      .albumLockedIcon{
+        display:flex; align-items:center; justify-content:center;
+        flex-direction:column; padding:22px 0 26px;
+      }
+      .lockShackle{
+        width:16px; height:12px; border:2.5px solid rgba(251,243,223,0.55);
+        border-bottom:none; border-radius:10px 10px 0 0; margin-bottom:-2px;
+      }
+      .lockBody{
+        width:24px; height:18px; border-radius:3px;
+        background: rgba(251,243,223,0.5);
+      }
       .albumCardName{ font-size:12px; font-weight:700; color:#fbf3df; }
       .albumCardGrade{ font-size:10px; font-weight:900; letter-spacing:0.5px; color:#ffd23f; }
       .albumCardGrade.excellent{ color:#ffd23f; }
       .albumCardGrade.perfect{ color:#8fe0ff; }
       .albumCardGrade.clear{ color:#9fd6a8; }
       .albumCardGrade.big{ font-size:14px; margin:4px 0; }
+
+      .albumBtnLabel{ white-space:nowrap; }
+      .albumBtnCount{ font-size:11px; opacity:0.85; white-space:nowrap; }
 
       #albumDetail{ padding:24px; }
       .albumDetailImg{ width:min(78vw,340px); aspect-ratio:1/1; object-fit:cover; border-radius:18px; margin-bottom:14px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
@@ -375,6 +417,10 @@
       .albumDetailStars{ font-size:14px; letter-spacing:2px; color:var(--lantern-dim,#ffb066); margin:6px 0; }
       .albumDetailRow{ font-size:12px; opacity:0.75; margin-top:3px; }
       .albumDetailClose{ position:absolute; top:16px; right:16px; }
+      .albumTitlesRow{
+        margin-top:14px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.12);
+        font-size:10px; letter-spacing:1px; opacity:0.5;
+      }
 
       .kokToast{
         position:fixed; left:50%; bottom:14%; transform:translate(-50%, 12px);
@@ -518,34 +564,58 @@
     tctx.setTransform(dpr,0,0,dpr,0,0);
     tctx.clearRect(0,0,size,size);
     const tcx = size/2, tcy = size/2, tR = size*0.30;
-    tctx.beginPath();
+    const path = new Path2D();
     for(let i = 0; i <= 72; i++){
       const a = (i/72) * Math.PI*2;
       const r = stage.shapeFn(a, tR);
       const x = tcx + r*Math.cos(a), y = tcy + r*Math.sin(a);
-      if(i === 0) tctx.moveTo(x,y); else tctx.lineTo(x,y);
+      if(i === 0) path.moveTo(x,y); else path.lineTo(x,y);
     }
-    tctx.closePath();
-    tctx.fillStyle = 'rgba(' + stage.fill + ',0.9)';
-    tctx.fill();
-    tctx.lineWidth = 1;
-    tctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    tctx.stroke();
+    path.closePath();
+
+    // glazed candy base — deepens toward the rim, like poured hard candy
+    const glaze = tctx.createRadialGradient(tcx - tR*0.3, tcy - tR*0.35, tR*0.1, tcx, tcy, tR*1.15);
+    glaze.addColorStop(0, 'rgba(' + stage.fill + ',0.98)');
+    glaze.addColorStop(0.7, 'rgba(' + stage.fill + ',0.92)');
+    glaze.addColorStop(1, 'rgba(0,0,0,0.35)');
+    tctx.fillStyle = glaze;
+    tctx.fill(path);
+
+    // thin gold rim
+    tctx.lineWidth = size*0.02;
+    tctx.strokeStyle = 'rgba(255,205,120,0.55)';
+    tctx.stroke(path);
+
+    // glass gloss highlight, upper-left
+    tctx.save();
+    tctx.clip(path);
+    const gloss = tctx.createRadialGradient(tcx - tR*0.4, tcy - tR*0.5, 1, tcx - tR*0.4, tcy - tR*0.5, tR*0.9);
+    gloss.addColorStop(0, 'rgba(255,255,255,0.55)');
+    gloss.addColorStop(1, 'rgba(255,255,255,0)');
+    tctx.fillStyle = gloss;
+    tctx.fillRect(0, 0, size, size);
+    tctx.restore();
   }
 
   function renderStageList(){
     stageList.innerHTML = '';
     const cleared = loadClearedStages();
+    const album = loadAlbum(gameMode);
     STAGES.forEach((s, i) => {
       const btn = document.createElement('button');
       btn.className = 'stageBtn' + (cleared.has(s.key) ? ' isCleared' : '');
       const stars = '★'.repeat(s.difficulty) + '☆'.repeat(5 - s.difficulty);
+      const rec = album[s.key];
+      const bestTime = rec ? rec.time.toFixed(2) + 's' : '--';
       btn.innerHTML =
         '<span class="num">' + (i+1) + '</span>' +
         '<canvas class="thumb"></canvas>' +
-        '<span class="stageInfo"><span class="stageName">' + s.name + '</span>' +
-        '<span class="stageStars">' + stars + '</span>' +
-        '<span class="stageClearedBadge">✓ クリア済み</span></span>';
+        '<span class="stageInfo">' +
+          '<span class="stageName">' + s.name + '</span>' +
+          '<span class="stageStars">' + stars + '</span>' +
+          '<span class="stageBestTime">BEST ' + bestTime + '</span>' +
+        '</span>' +
+        '<span class="stageClearStamp">CLEAR</span>';
       // Cleared or not, every stage stays fully playable — the badge is
       // just a record, never a lock.
       btn.addEventListener('click', () => startGame(i));
@@ -1195,17 +1265,27 @@
   // ---- album init: build the screen, wire up an entry button on the title ----
   buildAlbumScreen();
   renderAlbumGrid();
+  let albumOpenBtn;
+  function refreshAlbumButton(){
+    if(!albumOpenBtn) return;
+    const n = Object.keys(loadAlbum(gameMode)).length;
+    const pct = Math.round((n / STAGES.length) * 100);
+    albumOpenBtn.innerHTML =
+      '<span class="albumBtnLabel">作品アルバム</span>' +
+      '<span class="albumProgressTrack"><span class="albumProgressFill" style="width:' + pct + '%"></span></span>' +
+      '<span class="albumBtnCount">' + n + ' / ' + STAGES.length + '</span>';
+  }
   (function addAlbumOpenButton(){
-    const btn = document.createElement('button');
-    btn.className = 'albumOpenBtn';
-    btn.textContent = '📖 作品アルバム';
-    btn.addEventListener('click', () => {
+    albumOpenBtn = document.createElement('button');
+    albumOpenBtn.className = 'albumOpenBtn';
+    albumOpenBtn.addEventListener('click', () => {
       albumViewMode = gameMode;
       renderAlbumGrid();
       showScreen(albumScreen);
     });
     // sits between the title and the stage list
-    titleScreen.insertBefore(btn, stageList);
+    titleScreen.insertBefore(albumOpenBtn, stageList);
+    refreshAlbumButton();
   })();
 
   // ---- difficulty mode toggle ----
@@ -1223,6 +1303,8 @@
     btns.forEach(b => b.addEventListener('click', () => {
       setGameMode(b.dataset.mode);
       refresh();
+      renderStageList();
+      refreshAlbumButton();
     }));
     refresh();
     titleScreen.insertBefore(wrap, stageList);
@@ -1731,7 +1813,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 35 — EASY safe zone shifted outward';
+  const BUILD_TAG = 'BUILD 36 — UI polish: collection bar, emoji removed, titles space';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
