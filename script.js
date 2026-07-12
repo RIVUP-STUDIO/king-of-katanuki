@@ -903,11 +903,15 @@
 
     if(dist <= edgeR + reach*0.3){
       // Within the candy margin (or just barely past its outer rim) — try
-      // to scrape a small brush of buckets around the tip. Each one only
+      // to scrape a brush of buckets around the tip, strongest at the
+      // center and tapering off, so a single pass leaves a smooth wake
+      // instead of thin missed crumbs between strokes. Each bucket only
       // wears down if the tip is actually near ITS current remaining
       // surface, so you can't skip straight to the mold by hovering wide.
-      for(let i = -2; i <= 2; i++){
+      const BRUSH_RADIUS = 5;
+      for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
         const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+        const falloff = 1 - Math.abs(i) / (BRUSH_RADIUS + 1); // 1 at center, tapers outward
         const bTarget = targetRCache[b];
         const bEdge = plateEdgeCache[b];
         if(dist < bTarget - 0.5) continue; // would be inside that bucket's mold — skip, not a fail
@@ -917,7 +921,7 @@
 
         lastErodeAt[b] = now;
         const wasDone = erosion[b] >= EROSION_DONE;
-        erosion[b] = Math.min(1, erosion[b] + EROSION_STEP);
+        erosion[b] = Math.min(1, erosion[b] + EROSION_STEP * falloff);
         scraped = true;
         if(!wasDone && erosion[b] >= EROSION_DONE && !fullyEroded[b]){
           fullyEroded[b] = 1;
@@ -1495,7 +1499,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 30 — album (my page) added';
+  const BUILD_TAG = 'BUILD 31 — wider smooth scrape brush';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
