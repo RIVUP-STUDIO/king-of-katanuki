@@ -307,21 +307,27 @@
     return { label: 'Clear', cls: 'clear' };
   }
   function captureThumbnail(){
-    const THUMB = 420;
-    const off = document.createElement('canvas');
-    off.width = THUMB; off.height = THUMB;
-    const octx = off.getContext('2d');
-    octx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMB, THUMB);
-    return off.toDataURL('image/jpeg', 0.78);
+    try{
+      const THUMB = 420;
+      const off = document.createElement('canvas');
+      off.width = THUMB; off.height = THUMB;
+      const octx = off.getContext('2d');
+      octx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMB, THUMB);
+      return off.toDataURL('image/jpeg', 0.78);
+    }catch(e){
+      // A tainted canvas (or any other snapshot hiccup) must never take the
+      // rest of the save down with it — the record still needs to count.
+      return null;
+    }
   }
   function saveToAlbum(){
-    try{
-      const stage = STAGES[currentStageIndex];
-      const noBreak = sessionFailCount === 0;
-      const isPerfect = elapsed <= perfectTimeThreshold(stage);
-      const isExcellent = noBreak && isPerfect;
-      const grade = gradeForFails(sessionFailCount);
+    const stage = STAGES[currentStageIndex];
+    const noBreak = sessionFailCount === 0;
+    const isPerfect = elapsed <= perfectTimeThreshold(stage);
+    const isExcellent = noBreak && isPerfect;
+    const grade = gradeForFails(sessionFailCount);
 
+    try{
       profile.totalClears++;
       let xpGain = 20;
       if(noBreak){ profile.noBreakCount++; xpGain += 30; }
@@ -329,7 +335,10 @@
       if(isExcellent){ profile.excellentCount++; xpGain += 20; }
       if(profile.fastestTime === null || elapsed < profile.fastestTime) profile.fastestTime = elapsed;
       addXP(xpGain);
+    }catch(e){ /* stats are best-effort — never let this block the album save below */ }
 
+    try{
+      const snapshot = captureThumbnail();
       const album = loadAlbum(gameMode);
       const prevRecord = album[stage.key];
       const isNewRecord = !prevRecord || elapsed < prevRecord.time;
@@ -337,7 +346,7 @@
 
       const record = {
         key: stage.key, name: stage.name,
-        image: captureThumbnail(),
+        image: snapshot || (prevRecord ? prevRecord.image : null), // keep the old photo rather than lose the record
         grade: grade.label, gradeCls: grade.cls,
         difficulty: stage.difficulty,
         time: elapsed,
@@ -936,12 +945,14 @@
   const clearImages = {}; // stage name -> {img, loaded}
   STAGES.forEach(s => {
     const rec = { img: new Image(), loaded: false };
+    rec.img.crossOrigin = 'anonymous'; // keeps the canvas untainted so the album snapshot never silently fails
     rec.img.onload = () => { rec.loaded = true; };
     rec.img.onerror = () => { rec.loaded = false; };
     rec.img.src = CLEAR_IMG_BASE + 'clear_' + s.key + '.png';
     clearImages[s.name] = rec;
   });
   const festivalBg = { img: new Image(), loaded: false };
+  festivalBg.img.crossOrigin = 'anonymous';
   festivalBg.img.onload = () => { festivalBg.loaded = true; };
   festivalBg.img.onerror = () => { festivalBg.loaded = false; };
   festivalBg.img.src = CLEAR_IMG_BASE + 'festival_bg.png';
@@ -2324,7 +2335,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 37 — my page, ranking, bottom nav';
+  const BUILD_TAG = 'BUILD 38 — fixed silent album-save failure';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
