@@ -148,6 +148,127 @@
     }catch(e){ return false; }
   }
 
+  // ---- 作品アルバム (My Page): one keepsake photo per stage, kept in the
+  // browser via localStorage. Not a scoreboard — a small collection of
+  // "this came out nicely" moments the player can look back on. ----
+  const ALBUM_STORAGE_KEY = 'kok_album_v1';
+  function loadAlbum(){
+    try{
+      const raw = localStorage.getItem(ALBUM_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    }catch(e){ return {}; }
+  }
+  function gradeForFails(n){
+    if(n === 0) return { label: 'Excellent Clear', cls: 'excellent' };
+    if(n <= 2) return { label: 'Perfect Clear', cls: 'perfect' };
+    return { label: 'Clear', cls: 'clear' };
+  }
+  function captureThumbnail(){
+    const THUMB = 420;
+    const off = document.createElement('canvas');
+    off.width = THUMB; off.height = THUMB;
+    const octx = off.getContext('2d');
+    octx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMB, THUMB);
+    return off.toDataURL('image/jpeg', 0.78);
+  }
+  function saveToAlbum(){
+    try{
+      const stage = STAGES[currentStageIndex];
+      const grade = gradeForFails(sessionFailCount);
+      const record = {
+        key: stage.key, name: stage.name,
+        image: captureThumbnail(),
+        grade: grade.label, gradeCls: grade.cls,
+        difficulty: stage.difficulty,
+        time: elapsed,
+        date: new Date().toISOString(),
+        fails: sessionFailCount
+      };
+      const album = loadAlbum();
+      album[stage.key] = record; // one keepsake per stage — the latest clear
+      localStorage.setItem(ALBUM_STORAGE_KEY, JSON.stringify(album));
+      showSavedToast();
+      renderAlbumGrid();
+    }catch(e){ /* storage unavailable/full — never let this break the game */ }
+  }
+  function showSavedToast(){
+    const t = document.createElement('div');
+    t.className = 'kokToast';
+    t.textContent = '📸 アルバムに保存しました';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 2200);
+  }
+
+  // ---- album screen (built once, toggled with .hidden like the other overlays) ----
+  let albumScreen, albumGrid, albumDetail;
+  function buildAlbumScreen(){
+    albumScreen = document.createElement('div');
+    albumScreen.className = 'overlay hidden';
+    albumScreen.id = 'albumScreen';
+    albumScreen.innerHTML = `
+      <div class="albumHeader">
+        <span class="stageLabel">作品アルバム</span>
+        <button class="albumCloseBtn" id="albumCloseBtn">閉じる</button>
+      </div>
+      <div class="albumGrid" id="albumGrid"></div>
+    `;
+    document.getElementById('stage').appendChild(albumScreen);
+
+    albumDetail = document.createElement('div');
+    albumDetail.className = 'overlay hidden';
+    albumDetail.id = 'albumDetail';
+    document.getElementById('stage').appendChild(albumDetail);
+
+    albumGrid = document.getElementById('albumGrid');
+    document.getElementById('albumCloseBtn').addEventListener('click', () => {
+      albumScreen.classList.add('hidden');
+      showScreen(titleScreen);
+    });
+  }
+  function renderAlbumGrid(){
+    if(!albumGrid) return;
+    const album = loadAlbum();
+    albumGrid.innerHTML = '';
+    STAGES.forEach(s => {
+      const rec = album[s.key];
+      const card = document.createElement('button');
+      card.className = 'albumCard' + (rec ? '' : ' locked');
+      if(rec){
+        card.innerHTML = `<img src="${rec.image}" alt="${s.name}">
+          <span class="albumCardName">${s.name}</span>
+          <span class="albumCardGrade ${rec.gradeCls}">${rec.grade}</span>`;
+        card.addEventListener('click', () => openAlbumDetail(rec, s));
+      } else {
+        card.innerHTML = `<span class="albumLockedIcon">🔒</span>
+          <span class="albumCardName">${s.name}</span>
+          <span class="albumCardGrade">未クリア</span>`;
+      }
+      albumGrid.appendChild(card);
+    });
+  }
+  function openAlbumDetail(rec, stage){
+    const stars = '★'.repeat(stage.difficulty) + '☆'.repeat(5 - stage.difficulty);
+    const d = new Date(rec.date);
+    const dateStr = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+      String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    albumDetail.innerHTML = `
+      <button class="albumCloseBtn albumDetailClose" id="albumDetailClose">閉じる</button>
+      <img class="albumDetailImg" src="${rec.image}" alt="${rec.name}">
+      <div class="albumDetailInfo">
+        <div class="albumDetailName">${rec.name}</div>
+        <div class="albumCardGrade big ${rec.gradeCls}">${rec.grade}</div>
+        <div class="albumDetailStars">${stars}</div>
+        <div class="albumDetailRow">クリアタイム: ${rec.time.toFixed(2)}s</div>
+        <div class="albumDetailRow">${dateStr}</div>
+      </div>
+    `;
+    document.getElementById('albumDetailClose').addEventListener('click', () => {
+      albumDetail.classList.add('hidden');
+    });
+    albumDetail.classList.remove('hidden');
+  }
+
   // Small stylesheet for the "クリア済み" badge on the stage list — injected
   // here so everything stays in this one file.
   (function injectClearBadgeStyles(){
@@ -164,6 +285,57 @@
       }
       .stageBtn.isCleared .stageClearedBadge{ display:inline-flex; }
       .stageBtn.isCleared .num{ background: var(--safe,#3fe08a); }
+
+      .albumOpenBtn{
+        margin-top:2px; margin-bottom:10px;
+        font-family:'Zen Kaku Gothic New', sans-serif;
+        font-weight:700; font-size:13px; letter-spacing:1px;
+        padding:9px 20px; border-radius:999px;
+        border:1px solid rgba(255,200,140,0.5);
+        background:rgba(255,180,100,0.12); color:#fbf3df;
+      }
+      #albumScreen{ padding: 20px 18px; overflow-y:auto; align-items:stretch; }
+      .albumHeader{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+      .albumCloseBtn{
+        font-family:'Zen Kaku Gothic New', sans-serif; font-size:12px; font-weight:700;
+        background:rgba(255,255,255,0.08); color:#fbf3df; border:1px solid rgba(255,255,255,0.2);
+        padding:7px 14px; border-radius:999px;
+      }
+      .albumGrid{
+        display:grid; grid-template-columns:repeat(2, 1fr); gap:12px;
+        overflow-y:auto; padding-bottom:20px;
+      }
+      .albumCard{
+        display:flex; flex-direction:column; align-items:center; gap:4px;
+        background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
+        border-radius:16px; padding:8px; text-align:center;
+      }
+      .albumCard img{ width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px; }
+      .albumCard.locked{ opacity:0.45; }
+      .albumLockedIcon{ font-size:28px; padding:20px 0; }
+      .albumCardName{ font-size:12px; font-weight:700; color:#fbf3df; }
+      .albumCardGrade{ font-size:10px; font-weight:900; letter-spacing:0.5px; color:#ffd23f; }
+      .albumCardGrade.excellent{ color:#ffd23f; }
+      .albumCardGrade.perfect{ color:#8fe0ff; }
+      .albumCardGrade.clear{ color:#9fd6a8; }
+      .albumCardGrade.big{ font-size:14px; margin:4px 0; }
+
+      #albumDetail{ padding:24px; }
+      .albumDetailImg{ width:min(78vw,340px); aspect-ratio:1/1; object-fit:cover; border-radius:18px; margin-bottom:14px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
+      .albumDetailInfo{ text-align:center; }
+      .albumDetailName{ font-family:'Yuji Syuku',serif; font-size:22px; margin-bottom:6px; }
+      .albumDetailStars{ font-size:14px; letter-spacing:2px; color:var(--lantern-dim,#ffb066); margin:6px 0; }
+      .albumDetailRow{ font-size:12px; opacity:0.75; margin-top:3px; }
+      .albumDetailClose{ position:absolute; top:16px; right:16px; }
+
+      .kokToast{
+        position:fixed; left:50%; bottom:14%; transform:translate(-50%, 12px);
+        background:rgba(20,14,10,0.92); color:#fff6df; border:1px solid rgba(255,200,140,0.4);
+        padding:10px 18px; border-radius:999px; font-size:13px; font-weight:700;
+        opacity:0; transition:opacity 0.35s ease, transform 0.35s ease; z-index:99999;
+        pointer-events:none;
+      }
+      .kokToast.show{ opacity:1; transform:translate(-50%, 0); }
     `;
     document.head.appendChild(style);
   })();
@@ -442,8 +614,10 @@
 
   // ---- state ----
   let mode = 'title'; // title | playing | gameover | clearReveal | clear
-  let traced = new Array(N_BUCKETS).fill(false);
-  let tracedCount = 0;
+  let erosion = new Float32Array(N_BUCKETS); // 0 = full candy at this angle, 1 = fully scraped down to the mold
+  let lastErodeAt = new Float32Array(N_BUCKETS);
+  let fullyEroded = new Uint8Array(N_BUCKETS); // 1 once that bucket first reached "done", for counting
+  let erodedCount = 0;
   let currentState = null; // 'green' | 'yellow' | 'red' | null
   let needle = null; // {x,y} = visible tip position (offset above finger)
   let handlePos = null; // {x,y} = actual finger/touch position
@@ -459,9 +633,12 @@
   let celebTriggered = false;
   let fireworks = [];
   let dust = [];
-  let chipStartTime = new Float32Array(N_BUCKETS); // 0 = candy still intact there
-  let chipFrags = []; // small candy-shell fragments flying off as it's chipped
-  const CHIP_DURATION_MS = 380; // how long one wedge takes to visibly crumble away
+  let chipFrags = []; // small candy-shell fragments flying off as it's scraped
+  const EROSION_STEP = 0.07;   // how much one "tick" of scraping wears away
+  const EROSION_TICK_MS = 45;  // minimum time between ticks on the same spot
+  const EROSION_DONE = 0.97;   // treat a bucket as fully cleared past this
+  let sessionFailCount = 0;    // fails since this stage was last freshly picked (survives retries)
+  let albumSaved = false;      // guards against saving the same clear twice
 
   function vibrate(pattern){
     if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} }
@@ -471,6 +648,7 @@
   let audioCtx = null;
   let noiseBuffer = null;
   let lastScratchAt = 0;
+  let lastChipBreakAt = 0;
   function initAudio(){
     if(audioCtx) return;
     try{
@@ -587,8 +765,10 @@
   }
 
   function resetGame(){
-    traced.fill(false);
-    tracedCount = 0;
+    erosion.fill(0);
+    lastErodeAt.fill(0);
+    fullyEroded.fill(0);
+    erodedCount = 0;
     currentState = null;
     needle = null;
     handlePos = null;
@@ -601,7 +781,6 @@
     celebTriggered = false;
     fireworks = [];
     dust = [];
-    chipStartTime.fill(0);
     chipFrags = [];
     progressBar.style.width = '0%';
     timerEl.textContent = '0.0s';
@@ -609,11 +788,16 @@
 
   function showScreen(el){
     [titleScreen, gameoverScreen, clearScreen].forEach(s => s.classList.add('hidden'));
+    if(albumScreen) albumScreen.classList.add('hidden');
+    if(albumDetail) albumDetail.classList.add('hidden');
     if(el) el.classList.remove('hidden');
   }
 
   function startGame(stageIndex){
-    if(typeof stageIndex === 'number') currentStageIndex = stageIndex;
+    if(typeof stageIndex === 'number'){
+      if(stageIndex !== currentStageIndex) sessionFailCount = 0; // fresh stage pick
+      currentStageIndex = stageIndex;
+    }
     buildStageCache();
     resetGame();
     mode = 'playing';
@@ -634,6 +818,7 @@
 
   function gameOver(x, y){
     mode = 'gameover';
+    sessionFailCount++;
     failPoint = {x, y};
     needle = null;
     handlePos = null;
@@ -655,6 +840,7 @@
     clearPhaseStart = performance.now();
     liftTriggered = false;
     celebTriggered = false;
+    albumSaved = false;
     fireworks = [];
     dust = [];
     liftTiltSign = Math.random() < 0.5 ? -1 : 1;
@@ -689,87 +875,82 @@
     // make the tip "stick" under the finger).
     const maxOffset = Math.max(0, p.y - W*0.06);
     const offset = Math.min(needleOffset, maxOffset);
-    const rawTip = { x: p.x, y: p.y - offset };
+    // No magnetic snapping — this is free scraping, the tip goes exactly
+    // where the finger points, not pulled toward any particular line.
+    const tip = { x: p.x, y: p.y - offset };
+    needle = tip;
 
     if(startTime === null) startTime = performance.now();
 
-    let dx = rawTip.x - cx, dy = rawTip.y - cy;
-    let dist = Math.hypot(dx, dy);
+    const dx = tip.x - cx, dy = tip.y - cy;
+    const dist = Math.hypot(dx, dy);
     const angleDeg = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
     const bucket = Math.round(angleDeg) % N_BUCKETS;
     const targetR = targetRCache[bucket];
-    const diffRaw = dist - targetR;
+    const edgeR = plateEdgeCache[bucket];
 
-    // Magnetic assist: within a capture range around the line, gently pull
-    // the tip toward it so small hand tremor doesn't throw off the trace.
-    const magnetRange = safeBand * 2.4;
-    let snappedDist = dist;
-    if(dist > 0.001 && Math.abs(diffRaw) < magnetRange){
-      const pull = 1 - Math.abs(diffRaw) / magnetRange; // 0..1, stronger near the line
-      snappedDist = dist - diffRaw * pull * 0.6;
-    }
-    const dirX = dist > 0.001 ? dx / dist : 1;
-    const dirY = dist > 0.001 ? dy / dist : 0;
-    const tip = { x: cx + dirX * snappedDist, y: cy + dirY * snappedDist };
-    needle = tip;
-
-    const diff = snappedDist - targetR;
-
-    // The mold line itself is the hard inner edge, matching how real
-    // katanuki candy actually breaks: any dip inside it fails immediately,
-    // no shallow-intrusion grace. Outside the line stays exactly as
-    // forgiving as before (green band, then a wide yellow margin).
-    let newState;
-    if(diff >= 0 && diff <= safeBand) newState = 'green';
-    else if(diff > safeBand) newState = 'yellow';
-    else newState = 'red';
-
-    if(newState !== currentState){
-      currentState = newState;
-      if(newState === 'green') vibrate([0, 18, 20, 12]);
-      else if(newState === 'yellow') vibrate(6);
-      else if(newState === 'red') vibrate(40);
+    // Breaching the mold's own edge — zero tolerance, matches how real
+    // katanuki candy actually breaks the instant you cut too deep.
+    if(dist < targetR){
+      currentState = 'red';
+      gameOver(tip.x, tip.y);
+      return;
     }
 
-    if(newState === 'green'){
-      const now = performance.now();
-      const base = Math.round(angleDeg);
-      let chippedThisMove = false;
+    const now = performance.now();
+    const reach = safeBand * 1.7; // how close to the current candy surface counts as "touching" it
+    let scraped = false;
+
+    if(dist <= edgeR + reach*0.3){
+      // Within the candy margin (or just barely past its outer rim) — try
+      // to scrape a small brush of buckets around the tip. Each one only
+      // wears down if the tip is actually near ITS current remaining
+      // surface, so you can't skip straight to the mold by hovering wide.
       for(let i = -2; i <= 2; i++){
-        const b = (base + i + N_BUCKETS) % N_BUCKETS;
-        if(!traced[b]){
-          traced[b] = true;
-          tracedCount++;
+        const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+        const bTarget = targetRCache[b];
+        const bEdge = plateEdgeCache[b];
+        if(dist < bTarget - 0.5) continue; // would be inside that bucket's mold — skip, not a fail
+        const curSurf = bEdge - (bEdge - bTarget) * erosion[b];
+        if(dist > curSurf + reach) continue; // too far from the exposed surface to affect it
+        if(now - lastErodeAt[b] < EROSION_TICK_MS) continue; // pace the scraping rate
+
+        lastErodeAt[b] = now;
+        const wasDone = erosion[b] >= EROSION_DONE;
+        erosion[b] = Math.min(1, erosion[b] + EROSION_STEP);
+        scraped = true;
+        if(!wasDone && erosion[b] >= EROSION_DONE && !fullyEroded[b]){
+          fullyEroded[b] = 1;
+          erodedCount++;
         }
-        // Kick off the surrounding candy's crumble at this spot the first
-        // time it's reached, even if it was already "traced" a moment ago
-        // by a neighboring pass — the erosion itself only ever starts once.
-        if(chipStartTime[b] === 0){
-          chipStartTime[b] = now;
-          spawnChipFragment(b, now);
-          chippedThisMove = true;
-        }
+        if(Math.random() < 0.35) spawnChipFragment(b, now);
       }
-      const pct = (tracedCount / N_BUCKETS) * 100;
+    }
+
+    currentState = scraped ? 'green' : 'yellow';
+
+    if(scraped){
+      const pct = (erodedCount / N_BUCKETS) * 100;
       progressBar.style.width = pct.toFixed(1) + '%';
 
       // continuous "kari-kari" scratch sound + light vibration while carving,
-      // plus a sharper little "break" tick whenever candy actually chips off
+      // plus an occasional sharper "break" tick as bits actually come loose
       if(now - lastScratchAt > 90){
         lastScratchAt = now;
         playScratch();
         vibrate(5);
       }
-      if(chippedThisMove) playChipBreak();
+      if(now - lastChipBreakAt > 260){
+        lastChipBreakAt = now;
+        playChipBreak();
+      }
 
-      // Clear condition is intentionally strict: every bucket of the line
-      // must be traced. No partial-completion shortcut.
-      if(tracedCount >= N_BUCKETS){
+      // Clear condition is intentionally strict: every bucket's candy must
+      // be fully scraped away. No partial-completion shortcut.
+      if(erodedCount >= N_BUCKETS){
         elapsed = (performance.now() - startTime) / 1000;
         clearGame();
       }
-    } else if(newState === 'red'){
-      gameOver(tip.x, tip.y);
     }
   }
 
@@ -795,6 +976,21 @@
   backBtnOver.addEventListener('click', goToStageSelect);
   backBtnClear.addEventListener('click', goToStageSelect);
   renderStageList();
+
+  // ---- album init: build the screen, wire up an entry button on the title ----
+  buildAlbumScreen();
+  renderAlbumGrid();
+  (function addAlbumOpenButton(){
+    const btn = document.createElement('button');
+    btn.className = 'albumOpenBtn';
+    btn.textContent = '📖 作品アルバム';
+    btn.addEventListener('click', () => {
+      renderAlbumGrid();
+      showScreen(albumScreen);
+    });
+    // sits between the title and the stage list
+    titleScreen.insertBefore(btn, stageList);
+  })();
 
   // ---- drawing ----
   function draw(){
@@ -833,6 +1029,12 @@
       setTimeout(() => { if(mode === 'clearReveal') spawnFireworks(cx + W*0.15, cy - W*0.11, performance.now()); }, 320);
       setTimeout(() => { if(mode === 'clearReveal') spawnFireworks(cx - W*0.02, cy - W*0.22, performance.now()); }, 640);
     }
+    if(celebT >= 0.9 && !albumSaved){
+      albumSaved = true;
+      // wait one frame so this fully-lit frame (fireworks included) has
+      // actually been painted before we grab it as the keepsake image
+      requestAnimationFrame(() => saveToAlbum());
+    }
     // gentle float once the piece is fully lifted and the festival opens up
     const celebBob = celebT > 0 ? Math.sin(now / 420) * W*0.012 * celebT : 0;
 
@@ -858,12 +1060,8 @@
       for(let i = 0; i < N_BUCKETS; i++){
         const innerR = targetRCache[i];
         const edgeR = plateEdgeCache[i];
-        let outerR = edgeR;
-        if(chipStartTime[i] > 0){
-          const cp = Math.min(1, (now - chipStartTime[i]) / CHIP_DURATION_MS);
-          const cpEase = 1 - Math.pow(1 - cp, 2); // eases into the crumble
-          outerR = edgeR - (edgeR - innerR) * cpEase;
-        }
+        const erEase = 1 - Math.pow(1 - erosion[i], 2); // eases as it wears down
+        const outerR = edgeR - (edgeR - innerR) * erEase;
         if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
         const a0 = (i / N_BUCKETS) * Math.PI * 2;
         const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
@@ -978,7 +1176,7 @@
         ctx.restore();
       } else {
         const fillRGB = STAGES[currentStageIndex].fill;
-        const baseAlpha = 0.10 + 0.55 * (tracedCount/N_BUCKETS);
+        const baseAlpha = 0.10 + 0.55 * (erodedCount/N_BUCKETS);
         const alpha = baseAlpha + (1 - baseAlpha) * liftEase;
         ctx.fillStyle = 'rgba(' + fillRGB + ',' + alpha + ')';
         ctx.fill(shapePath);
@@ -1009,38 +1207,6 @@
         ctx.stroke(shapePath);
         ctx.shadowBlur = 0;
         ctx.restore();
-      }
-
-      // guide line: only shown while still in the mold, pre-clear
-      if(clearPhaseStart === null && shapePts.length === N_BUCKETS){
-        for(let i = 0; i < N_BUCKETS; i++){
-          const p0 = shapePts[i];
-          const p1 = shapePts[(i+1) % N_BUCKETS];
-          ctx.beginPath();
-          ctx.moveTo(p0.x, p0.y);
-          ctx.lineTo(p1.x, p1.y);
-          if(traced[i]){
-            ctx.strokeStyle = 'rgba(63,224,138,0.9)';
-            ctx.lineWidth = 5;
-          } else {
-            ctx.strokeStyle = 'rgba(120,60,20,0.35)';
-            ctx.lineWidth = 2;
-          }
-          ctx.stroke();
-        }
-
-        // "start here" marker at the top of the line — a suggestion, not a
-        // requirement, since carving can begin anywhere on the outline.
-        if(!traced[270] && tracedCount === 0){
-          const sp = shapePts[270]; // theta = -90deg = straight up
-          ctx.beginPath();
-          ctx.arc(sp.x, sp.y, W*0.014, 0, Math.PI*2);
-          ctx.fillStyle = 'rgba(255,255,255,0.85)';
-          ctx.fill();
-          ctx.lineWidth = 2;
-          ctx.strokeStyle = 'rgba(120,60,20,0.5)';
-          ctx.stroke();
-        }
       }
 
       ctx.restore();
@@ -1329,7 +1495,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 28 — strict inner edge, no inward slack';
+  const BUILD_TAG = 'BUILD 30 — album (my page) added';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
