@@ -21,7 +21,6 @@
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
   const CELEBRATION_MS = 1300; // festival scene fade-in before the result screen
-  const INNER_WARN_PX = 4;    // a shallow dip past the line warns (yellow) instead of failing outright
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -716,13 +715,13 @@
 
     const diff = snappedDist - targetR;
 
-    // Outside the line is always forgiving (yellow, never fails). Inside,
-    // a shallow dip just past the safe band still only warns (yellow) —
-    // only a deeper intrusion counts as a real break (red).
+    // The mold line itself is the hard inner edge, matching how real
+    // katanuki candy actually breaks: any dip inside it fails immediately,
+    // no shallow-intrusion grace. Outside the line stays exactly as
+    // forgiving as before (green band, then a wide yellow margin).
     let newState;
-    if(Math.abs(diff) <= safeBand) newState = 'green';
+    if(diff >= 0 && diff <= safeBand) newState = 'green';
     else if(diff > safeBand) newState = 'yellow';
-    else if(diff > -(safeBand + INNER_WARN_PX)) newState = 'yellow';
     else newState = 'red';
 
     if(newState !== currentState){
@@ -1330,7 +1329,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 27 — stage order matches difficulty';
+  const BUILD_TAG = 'BUILD 28 — strict inner edge, no inward slack';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
