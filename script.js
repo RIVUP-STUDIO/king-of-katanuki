@@ -130,15 +130,18 @@
     return Rb * FURIN_SHAPE_RATIOS[idx];
   }
 
-  // ---- clear-record tracking (persisted in the browser via localStorage) ----
-  // ---- difficulty mode: イージー(line-tracing, snaps to the mold outline)
-  // vs ハード(free scraping, no snap) — persisted like the clear records.
-  const MODE_STORAGE_KEY = 'kok_easy_mode_v1';
-  let easyMode = false;
-  try{ easyMode = localStorage.getItem(MODE_STORAGE_KEY) === '1'; }catch(e){}
-  function setEasyMode(v){
-    easyMode = v;
-    try{ localStorage.setItem(MODE_STORAGE_KEY, v ? '1' : '0'); }catch(e){}
+  // ---- difficulty mode: EASY (line-tracing, forgiving both ways) /
+  // NORMAL (line-tracing, safe line sits exactly on the mold's outer edge —
+  // any dip inside is instant out) / HARD (free scraping, no snap at all).
+  const MODE_STORAGE_KEY = 'kok_game_mode_v2';
+  let gameMode = 'normal';
+  try{
+    const saved = localStorage.getItem(MODE_STORAGE_KEY);
+    if(saved === 'easy' || saved === 'normal' || saved === 'hard') gameMode = saved;
+  }catch(e){}
+  function setGameMode(v){
+    gameMode = v;
+    try{ localStorage.setItem(MODE_STORAGE_KEY, v); }catch(e){}
   }
 
   const CLEAR_STORAGE_KEY = 'kok_cleared_stages_v1';
@@ -160,11 +163,13 @@
 
   // ---- 作品アルバム (My Page): one keepsake photo per stage, kept in the
   // browser via localStorage. Not a scoreboard — a small collection of
-  // "this came out nicely" moments the player can look back on. ----
-  const ALBUM_STORAGE_KEY = 'kok_album_v1';
-  function loadAlbum(){
+  // "this came out nicely" moments the player can look back on. Kept
+  // separate per difficulty mode, since an EASY clear and a HARD clear of
+  // the same stage are very different achievements.
+  const ALBUM_STORAGE_PREFIX = 'kok_album_v1_';
+  function loadAlbum(m){
     try{
-      const raw = localStorage.getItem(ALBUM_STORAGE_KEY);
+      const raw = localStorage.getItem(ALBUM_STORAGE_PREFIX + (m || gameMode));
       return raw ? JSON.parse(raw) : {};
     }catch(e){ return {}; }
   }
@@ -194,9 +199,9 @@
         date: new Date().toISOString(),
         fails: sessionFailCount
       };
-      const album = loadAlbum();
-      album[stage.key] = record; // one keepsake per stage — the latest clear
-      localStorage.setItem(ALBUM_STORAGE_KEY, JSON.stringify(album));
+      const album = loadAlbum(gameMode);
+      album[stage.key] = record; // one keepsake per stage per mode — the latest clear
+      localStorage.setItem(ALBUM_STORAGE_PREFIX + gameMode, JSON.stringify(album));
       showSavedToast();
       renderAlbumGrid();
     }catch(e){ /* storage unavailable/full — never let this break the game */ }
@@ -211,7 +216,9 @@
   }
 
   // ---- album screen (built once, toggled with .hidden like the other overlays) ----
-  let albumScreen, albumGrid, albumDetail;
+  let albumScreen, albumGrid, albumDetail, albumTabsEl;
+  let albumViewMode = 'normal';
+  const MODE_LABELS = { easy:'EASY', normal:'NORMAL', hard:'HARD' };
   function buildAlbumScreen(){
     albumScreen = document.createElement('div');
     albumScreen.className = 'overlay hidden';
@@ -221,6 +228,7 @@
         <span class="stageLabel">作品アルバム</span>
         <button class="albumCloseBtn" id="albumCloseBtn">閉じる</button>
       </div>
+      <div class="modeToggleWrap" id="albumTabs"></div>
       <div class="albumGrid" id="albumGrid"></div>
     `;
     document.getElementById('stage').appendChild(albumScreen);
@@ -231,6 +239,18 @@
     document.getElementById('stage').appendChild(albumDetail);
 
     albumGrid = document.getElementById('albumGrid');
+    albumTabsEl = document.getElementById('albumTabs');
+    ['easy','normal','hard'].forEach(m => {
+      const b = document.createElement('button');
+      b.className = 'modeBtn';
+      b.textContent = MODE_LABELS[m];
+      b.dataset.mode = m;
+      b.addEventListener('click', () => {
+        albumViewMode = m;
+        renderAlbumGrid();
+      });
+      albumTabsEl.appendChild(b);
+    });
     document.getElementById('albumCloseBtn').addEventListener('click', () => {
       albumScreen.classList.add('hidden');
       showScreen(titleScreen);
@@ -238,7 +258,10 @@
   }
   function renderAlbumGrid(){
     if(!albumGrid) return;
-    const album = loadAlbum();
+    albumTabsEl.querySelectorAll('.modeBtn').forEach(b => {
+      b.classList.toggle('active', b.dataset.mode === albumViewMode);
+    });
+    const album = loadAlbum(albumViewMode);
     albumGrid.innerHTML = '';
     STAGES.forEach(s => {
       const rec = album[s.key];
@@ -305,13 +328,14 @@
         background:rgba(255,180,100,0.12); color:#fbf3df;
       }
       .modeToggleWrap{
-        display:flex; gap:6px; margin-bottom:14px;
+        display:flex; gap:4px; margin-bottom:14px; width:min(84vw, 320px);
         background:rgba(255,255,255,0.06); border-radius:999px; padding:4px;
       }
       .modeBtn{
+        flex:1;
         font-family:'Zen Kaku Gothic New', sans-serif;
-        font-weight:700; font-size:12px; letter-spacing:1px;
-        padding:7px 16px; border-radius:999px; border:none;
+        font-weight:700; font-size:11px; letter-spacing:0.5px;
+        padding:7px 6px; border-radius:999px; border:none;
         background:transparent; color:rgba(251,243,223,0.6);
       }
       .modeBtn.active{
@@ -904,7 +928,8 @@
 
     if(startTime === null) startTime = performance.now();
 
-    if(easyMode) handleMoveEasy(rawTip);
+    if(gameMode === 'easy') handleMoveEasy(rawTip);
+    else if(gameMode === 'normal') handleMoveNormal(rawTip);
     else handleMoveHard(rawTip);
   }
 
@@ -1011,12 +1036,90 @@
     needle = tip;
 
     const diff = snappedDist - targetR;
-    const easySlack = safeBand * 1.3; // shallow dip past the line still just warns
+    const innerGreen = safeBand * 0.5;  // less room to dip inside than before
+    const outerGreen = safeBand;        // outward room unchanged
+    const easySlack = safeBand * 0.8;   // shallow dip past that still just warns
     let newState;
-    if(Math.abs(diff) <= safeBand) newState = 'green';
-    else if(diff > safeBand) newState = 'yellow';
-    else if(diff > -(safeBand + easySlack)) newState = 'yellow';
+    if(diff >= -innerGreen && diff <= outerGreen) newState = 'green';
+    else if(diff > outerGreen) newState = 'yellow';
+    else if(diff > -(innerGreen + easySlack)) newState = 'yellow';
     else newState = 'red';
+
+    if(newState !== currentState){
+      currentState = newState;
+      if(newState === 'green') vibrate([0, 18, 20, 12]);
+      else if(newState === 'yellow') vibrate(6);
+      else if(newState === 'red') vibrate(40);
+    }
+
+    if(newState === 'red'){
+      gameOver(tip.x, tip.y);
+      return;
+    }
+    if(newState !== 'green') return;
+
+    const now = performance.now();
+    let scraped = false;
+    for(let i = -2; i <= 2; i++){
+      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
+      lastErodeAt[b] = now;
+      const wasDone = erosion[b] >= EROSION_DONE;
+      erosion[b] = 1;
+      scraped = true;
+      if(!wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
+      }
+      if(Math.random() < 0.5) spawnChipFragment(b, now);
+    }
+
+    if(scraped){
+      const pct = (erodedCount / N_BUCKETS) * 100;
+      progressBar.style.width = pct.toFixed(1) + '%';
+      if(now - lastScratchAt > 90){
+        lastScratchAt = now;
+        playScratch();
+        vibrate(5);
+      }
+      if(now - lastChipBreakAt > 260){
+        lastChipBreakAt = now;
+        playChipBreak();
+      }
+      if(erodedCount >= N_BUCKETS){
+        elapsed = (performance.now() - startTime) / 1000;
+        clearGame();
+      }
+    }
+  }
+
+  // ノーマルモード: the same gentle line-tracing feel as Easy, but the safe
+  // line sits exactly on the mold's outer edge — any dip inside is instant
+  // out, no shallow-warning buffer. Outside stays exactly as forgiving.
+  function handleMoveNormal(rawTip){
+    const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
+    const dist0 = Math.hypot(dx0, dy0);
+    const angleDeg = ((Math.atan2(dy0, dx0) * 180 / Math.PI) + 360) % 360;
+    const bucket = Math.round(angleDeg) % N_BUCKETS;
+    const targetR = targetRCache[bucket];
+
+    const diffRaw = dist0 - targetR;
+    const magnetRange = safeBand * 2.6;
+    let snappedDist = dist0;
+    if(dist0 > 0.001 && Math.abs(diffRaw) < magnetRange){
+      const pull = 1 - Math.abs(diffRaw) / magnetRange;
+      snappedDist = dist0 - diffRaw * pull * 0.6;
+    }
+    const dirX = dist0 > 0.001 ? dx0/dist0 : 1;
+    const dirY = dist0 > 0.001 ? dy0/dist0 : 0;
+    const tip = { x: cx + dirX*snappedDist, y: cy + dirY*snappedDist };
+    needle = tip;
+
+    const diff = snappedDist - targetR;
+    let newState;
+    if(diff >= 0 && diff <= safeBand) newState = 'green';
+    else if(diff > safeBand) newState = 'yellow';
+    else newState = 'red'; // any dip inside the line at all — instant out
 
     if(newState !== currentState){
       currentState = newState;
@@ -1097,6 +1200,7 @@
     btn.className = 'albumOpenBtn';
     btn.textContent = '📖 作品アルバム';
     btn.addEventListener('click', () => {
+      albumViewMode = gameMode;
       renderAlbumGrid();
       showScreen(albumScreen);
     });
@@ -1109,14 +1213,15 @@
     const wrap = document.createElement('div');
     wrap.className = 'modeToggleWrap';
     wrap.innerHTML =
-      '<button class="modeBtn" data-mode="easy">イージー</button>' +
-      '<button class="modeBtn" data-mode="hard">ハード</button>';
+      '<button class="modeBtn" data-mode="easy">EASY</button>' +
+      '<button class="modeBtn" data-mode="normal">NORMAL</button>' +
+      '<button class="modeBtn" data-mode="hard">HARD</button>';
     const btns = wrap.querySelectorAll('.modeBtn');
     function refresh(){
-      btns.forEach(b => b.classList.toggle('active', b.dataset.mode === (easyMode ? 'easy' : 'hard')));
+      btns.forEach(b => b.classList.toggle('active', b.dataset.mode === gameMode));
     }
     btns.forEach(b => b.addEventListener('click', () => {
-      setEasyMode(b.dataset.mode === 'easy');
+      setGameMode(b.dataset.mode);
       refresh();
     }));
     refresh();
@@ -1626,7 +1731,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 33 — easy/hard mode toggle';
+  const BUILD_TAG = 'BUILD 35 — EASY safe zone shifted outward';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
