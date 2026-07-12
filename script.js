@@ -131,6 +131,16 @@
   }
 
   // ---- clear-record tracking (persisted in the browser via localStorage) ----
+  // ---- difficulty mode: イージー(line-tracing, snaps to the mold outline)
+  // vs ハード(free scraping, no snap) — persisted like the clear records.
+  const MODE_STORAGE_KEY = 'kok_easy_mode_v1';
+  let easyMode = false;
+  try{ easyMode = localStorage.getItem(MODE_STORAGE_KEY) === '1'; }catch(e){}
+  function setEasyMode(v){
+    easyMode = v;
+    try{ localStorage.setItem(MODE_STORAGE_KEY, v ? '1' : '0'); }catch(e){}
+  }
+
   const CLEAR_STORAGE_KEY = 'kok_cleared_stages_v1';
   function loadClearedStages(){
     try{
@@ -293,6 +303,20 @@
         padding:9px 20px; border-radius:999px;
         border:1px solid rgba(255,200,140,0.5);
         background:rgba(255,180,100,0.12); color:#fbf3df;
+      }
+      .modeToggleWrap{
+        display:flex; gap:6px; margin-bottom:14px;
+        background:rgba(255,255,255,0.06); border-radius:999px; padding:4px;
+      }
+      .modeBtn{
+        font-family:'Zen Kaku Gothic New', sans-serif;
+        font-weight:700; font-size:12px; letter-spacing:1px;
+        padding:7px 16px; border-radius:999px; border:none;
+        background:transparent; color:rgba(251,243,223,0.6);
+      }
+      .modeBtn.active{
+        background: linear-gradient(180deg, var(--lantern,#ff8a3d), #d95d16);
+        color:#1a0e04;
       }
       #albumScreen{ padding: 20px 18px; overflow-y:auto; align-items:stretch; }
       .albumHeader{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
@@ -876,13 +900,18 @@
     // make the tip "stick" under the finger).
     const maxOffset = Math.max(0, p.y - W*0.06);
     const offset = Math.min(needleOffset, maxOffset);
-    // No magnetic snapping — this is free scraping, the tip goes exactly
-    // where the finger points, not pulled toward any particular line.
-    const tip = { x: p.x, y: p.y - offset };
-    needle = tip;
+    const rawTip = { x: p.x, y: p.y - offset };
 
     if(startTime === null) startTime = performance.now();
 
+    if(easyMode) handleMoveEasy(rawTip);
+    else handleMoveHard(rawTip);
+  }
+
+  // ハードモード: free scraping — no snapping, the surrounding candy wears
+  // away wherever the tip actually reaches, breaching the mold fails.
+  function handleMoveHard(tip){
+    needle = tip;
     const dx = tip.x - cx, dy = tip.y - cy;
     const dist = Math.hypot(dx, dy);
     const angleDeg = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
@@ -959,6 +988,84 @@
     }
   }
 
+  // イージーモード: the original line-tracing feel — the needle gently
+  // snaps toward the mold's outline, with forgiving room on both sides of
+  // the line, and a shallow dip inside still only warns before it fails.
+  function handleMoveEasy(rawTip){
+    const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
+    const dist0 = Math.hypot(dx0, dy0);
+    const angleDeg = ((Math.atan2(dy0, dx0) * 180 / Math.PI) + 360) % 360;
+    const bucket = Math.round(angleDeg) % N_BUCKETS;
+    const targetR = targetRCache[bucket];
+
+    const diffRaw = dist0 - targetR;
+    const magnetRange = safeBand * 2.6;
+    let snappedDist = dist0;
+    if(dist0 > 0.001 && Math.abs(diffRaw) < magnetRange){
+      const pull = 1 - Math.abs(diffRaw) / magnetRange;
+      snappedDist = dist0 - diffRaw * pull * 0.6;
+    }
+    const dirX = dist0 > 0.001 ? dx0/dist0 : 1;
+    const dirY = dist0 > 0.001 ? dy0/dist0 : 0;
+    const tip = { x: cx + dirX*snappedDist, y: cy + dirY*snappedDist };
+    needle = tip;
+
+    const diff = snappedDist - targetR;
+    const easySlack = safeBand * 1.3; // shallow dip past the line still just warns
+    let newState;
+    if(Math.abs(diff) <= safeBand) newState = 'green';
+    else if(diff > safeBand) newState = 'yellow';
+    else if(diff > -(safeBand + easySlack)) newState = 'yellow';
+    else newState = 'red';
+
+    if(newState !== currentState){
+      currentState = newState;
+      if(newState === 'green') vibrate([0, 18, 20, 12]);
+      else if(newState === 'yellow') vibrate(6);
+      else if(newState === 'red') vibrate(40);
+    }
+
+    if(newState === 'red'){
+      gameOver(tip.x, tip.y);
+      return;
+    }
+    if(newState !== 'green') return;
+
+    const now = performance.now();
+    let scraped = false;
+    for(let i = -2; i <= 2; i++){
+      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
+      lastErodeAt[b] = now;
+      const wasDone = erosion[b] >= EROSION_DONE;
+      erosion[b] = 1;
+      scraped = true;
+      if(!wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
+      }
+      if(Math.random() < 0.5) spawnChipFragment(b, now);
+    }
+
+    if(scraped){
+      const pct = (erodedCount / N_BUCKETS) * 100;
+      progressBar.style.width = pct.toFixed(1) + '%';
+      if(now - lastScratchAt > 90){
+        lastScratchAt = now;
+        playScratch();
+        vibrate(5);
+      }
+      if(now - lastChipBreakAt > 260){
+        lastChipBreakAt = now;
+        playChipBreak();
+      }
+      if(erodedCount >= N_BUCKETS){
+        elapsed = (performance.now() - startTime) / 1000;
+        clearGame();
+      }
+    }
+  }
+
   function handleEnd(){
     if(mode !== 'playing') return;
     needle = null;
@@ -995,6 +1102,25 @@
     });
     // sits between the title and the stage list
     titleScreen.insertBefore(btn, stageList);
+  })();
+
+  // ---- difficulty mode toggle ----
+  (function addModeToggle(){
+    const wrap = document.createElement('div');
+    wrap.className = 'modeToggleWrap';
+    wrap.innerHTML =
+      '<button class="modeBtn" data-mode="easy">イージー</button>' +
+      '<button class="modeBtn" data-mode="hard">ハード</button>';
+    const btns = wrap.querySelectorAll('.modeBtn');
+    function refresh(){
+      btns.forEach(b => b.classList.toggle('active', b.dataset.mode === (easyMode ? 'easy' : 'hard')));
+    }
+    btns.forEach(b => b.addEventListener('click', () => {
+      setEasyMode(b.dataset.mode === 'easy');
+      refresh();
+    }));
+    refresh();
+    titleScreen.insertBefore(wrap, stageList);
   })();
 
   // ---- drawing ----
@@ -1500,7 +1626,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 32 — inner slack restored';
+  const BUILD_TAG = 'BUILD 33 — easy/hard mode toggle';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
