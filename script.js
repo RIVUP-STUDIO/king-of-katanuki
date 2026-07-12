@@ -161,6 +161,134 @@
     }catch(e){ return false; }
   }
 
+  // ---- プレイヤープロフィール: level, XP, titles, lifetime stats.
+  // Separate localStorage key — existing clear/album/mode data is untouched.
+  const PROFILE_STORAGE_KEY = 'kok_profile_v1';
+  const DEFAULT_PROFILE = {
+    name: 'ななしの型抜き職人',
+    level: 1,
+    xp: 0,
+    totalPlays: 0,
+    totalClears: 0,
+    totalFails: 0,
+    excellentCount: 0,
+    noBreakCount: 0,
+    perfectCount: 0,
+    fastestTime: null,
+    selectedTitle: null // null = auto (level-based); reserved for future manual titles
+  };
+  function loadProfile(){
+    try{
+      const raw = localStorage.getItem(PROFILE_STORAGE_KEY);
+      const saved = raw ? JSON.parse(raw) : {};
+      return Object.assign({}, DEFAULT_PROFILE, saved); // fills in any missing fields safely
+    }catch(e){ return Object.assign({}, DEFAULT_PROFILE); }
+  }
+  let profile = loadProfile();
+  function saveProfile(){
+    try{ localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile)); }catch(e){}
+  }
+
+  // 称号テーブル: level -> title. Event/achievement titles can be appended
+  // to this same array later (e.g. {minLevel:0,maxLevel:999,name:'...',
+  // requires:'someFlag'}) without changing how titleForLevel() is called.
+  const TITLES = [
+    { minLevel: 1,  maxLevel: 4,        name: '型抜き見習い' },
+    { minLevel: 5,  maxLevel: 9,        name: '駄菓子屋の常連' },
+    { minLevel: 10, maxLevel: 19,       name: '飴削り職人' },
+    { minLevel: 20, maxLevel: 29,       name: '縁日の名人' },
+    { minLevel: 30, maxLevel: 49,       name: '型抜き王' },
+    { minLevel: 50, maxLevel: Infinity, name: 'KING OF KATANUKI' }
+  ];
+  function titleForLevel(lv){
+    const t = TITLES.find(t => lv >= t.minLevel && lv <= t.maxLevel);
+    return t ? t.name : TITLES[0].name;
+  }
+  function currentTitle(){
+    return profile.selectedTitle || titleForLevel(profile.level);
+  }
+
+  // 必要経験値: flat 100 for now. Swap this one function out later (e.g. a
+  // per-level table, or lv*80+50) without touching anything that calls it.
+  function xpNeededForLevel(lv){ return 100; }
+  function addXP(amount){
+    profile.xp += amount;
+    let leveledUp = false;
+    while(profile.xp >= xpNeededForLevel(profile.level)){
+      profile.xp -= xpNeededForLevel(profile.level);
+      profile.level++;
+      leveledUp = true;
+    }
+    saveProfile();
+    return leveledUp;
+  }
+
+  // 仮の「Perfect」判定用しきい値(難易度ベース)。実際のベンチマークが
+  // 取れたら差し替えやすいよう、1関数にまとめてある。
+  function perfectTimeThreshold(stage){
+    return 12 + stage.difficulty * 6; // seconds — placeholder, easy to retune
+  }
+
+  // ---- ランキング(試作・仮データ) ----------------------------------------
+  // getRankingData() is the ONLY function that needs to change when this
+  // moves to a real backend (Supabase/Firebase/etc). renderRanking() just
+  // displays whatever array it's given — it never generates data itself.
+  const RANKING_NAME_POOL = [
+    '祭りの達人','飴職人タケ','金魚すくい王','型抜き小僧','夏祭りハナ',
+    'KATANUKI_7','縁日の記憶','りんご飴','提灯マスター','夜店の主',
+    '風鈴ガール','わたがし部長','屋台の帝王','宵宮太郎','花火師ミサキ',
+    'ゆかたの少女','的屋の息子','金魚姫','おこづかい500円','夏の夜風',
+    '型抜き二段','浴衣コレクター','縁側のねこ','夜市の案内人','飴細工師',
+    'たません党','射的名人','輪投げ王子','おまつり係長','KATANUKI_MASTER'
+  ];
+  const rankingCache = {}; // 'stageKey_mode' -> sorted [{name,time,isPlayer?}]
+  function seededRandom(seed){
+    let s = seed % 2147483647; if(s <= 0) s += 2147483646;
+    return function(){ s = s * 16807 % 2147483647; return (s - 1) / 2147483646; };
+  }
+  function hashSeed(str){
+    let h = 0;
+    for(let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+    return Math.abs(h) || 1;
+  }
+  function generateDummyRanking(stageKey, modeKey){
+    const stage = STAGES.find(s => s.key === stageKey);
+    const modeFactor = modeKey === 'easy' ? 1.3 : modeKey === 'hard' ? 0.85 : 1;
+    const baseline = perfectTimeThreshold(stage) * modeFactor;
+    const rnd = seededRandom(hashSeed(stageKey + '_' + modeKey));
+    const shuffled = RANKING_NAME_POOL
+      .map(n => ({ n, r: rnd() }))
+      .sort((a, b) => a.r - b.r)
+      .slice(0, 26)
+      .map(x => x.n);
+    const entries = shuffled.map(name => ({
+      name, time: +(baseline * (0.6 + rnd() * 0.9)).toFixed(2)
+    }));
+    entries.sort((a, b) => a.time - b.time);
+    return entries;
+  }
+  // period is accepted but currently ignored (demo data doesn't change by
+  // day/week) — kept in the signature so a real backend can filter by it
+  // without callers needing to change.
+  function getRankingData(stageKey, modeKey, period){
+    const cacheKey = stageKey + '_' + modeKey;
+    if(!rankingCache[cacheKey]) rankingCache[cacheKey] = generateDummyRanking(stageKey, modeKey);
+    return rankingCache[cacheKey];
+  }
+  function setPlayerRankingEntry(stageKey, modeKey, time){
+    const cacheKey = stageKey + '_' + modeKey;
+    const data = getRankingData(stageKey, modeKey).filter(e => !e.isPlayer);
+    data.push({ name: profile.name, time: +time.toFixed(2), isPlayer: true });
+    data.sort((a, b) => a.time - b.time);
+    rankingCache[cacheKey] = data;
+  }
+  function rankForTime(stageKey, modeKey, time){
+    const data = getRankingData(stageKey, modeKey).filter(e => !e.isPlayer);
+    let rank = 1;
+    for(const e of data) if(e.time < time) rank++;
+    return rank;
+  }
+
   // ---- 作品アルバム (My Page): one keepsake photo per stage, kept in the
   // browser via localStorage. Not a scoreboard — a small collection of
   // "this came out nicely" moments the player can look back on. Kept
@@ -189,7 +317,24 @@
   function saveToAlbum(){
     try{
       const stage = STAGES[currentStageIndex];
+      const noBreak = sessionFailCount === 0;
+      const isPerfect = elapsed <= perfectTimeThreshold(stage);
+      const isExcellent = noBreak && isPerfect;
       const grade = gradeForFails(sessionFailCount);
+
+      profile.totalClears++;
+      let xpGain = 20;
+      if(noBreak){ profile.noBreakCount++; xpGain += 30; }
+      if(isPerfect){ profile.perfectCount++; xpGain += 50; }
+      if(isExcellent){ profile.excellentCount++; xpGain += 20; }
+      if(profile.fastestTime === null || elapsed < profile.fastestTime) profile.fastestTime = elapsed;
+      addXP(xpGain);
+
+      const album = loadAlbum(gameMode);
+      const prevRecord = album[stage.key];
+      const isNewRecord = !prevRecord || elapsed < prevRecord.time;
+      const prevTime = prevRecord ? prevRecord.time : null;
+
       const record = {
         key: stage.key, name: stage.name,
         image: captureThumbnail(),
@@ -199,12 +344,21 @@
         date: new Date().toISOString(),
         fails: sessionFailCount
       };
-      const album = loadAlbum(gameMode);
-      album[stage.key] = record; // one keepsake per stage per mode — the latest clear
+      album[stage.key] = record;
       localStorage.setItem(ALBUM_STORAGE_PREFIX + gameMode, JSON.stringify(album));
-      showSavedToast();
+
+      if(isNewRecord){
+        const rankBefore = prevTime !== null ? rankForTime(stage.key, gameMode, prevTime) : null;
+        setPlayerRankingEntry(stage.key, gameMode, elapsed);
+        const rankAfter = rankForTime(stage.key, gameMode, elapsed);
+        showNewRecordToast(prevTime, elapsed, rankBefore, rankAfter);
+      } else {
+        showSavedToast();
+      }
+
       renderAlbumGrid();
       refreshAlbumButton();
+      refreshMyPage();
     }catch(e){ /* storage unavailable/full — never let this break the game */ }
   }
   function showSavedToast(){
@@ -215,9 +369,29 @@
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 2200);
   }
+  function showNewRecordToast(prevTime, newTime, rankBefore, rankAfter){
+    const t = document.createElement('div');
+    t.className = 'kokToast kokRecordToast';
+    const diff = prevTime !== null ? (prevTime - newTime).toFixed(2) : null;
+    let html = '<div class="recordTitle">NEW RECORD</div>' +
+      '<div class="recordTime">' + newTime.toFixed(2) + 's</div>';
+    if(prevTime !== null){
+      html += '<div class="recordSub">前回記録 ' + prevTime.toFixed(2) + 's ／ ' + diff + '秒更新</div>';
+    }
+    if(rankBefore !== null && rankAfter !== null && rankBefore !== rankAfter){
+      html += '<div class="recordSub">ランキング ' + rankBefore + '位 → ' + rankAfter + '位</div>';
+    } else if(rankAfter !== null){
+      html += '<div class="recordSub">ランキング ' + rankAfter + '位</div>';
+    }
+    t.innerHTML = html;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 500); }, 3200);
+  }
 
   // ---- album screen (built once, toggled with .hidden like the other overlays) ----
   let albumScreen, albumGrid, albumDetail, albumTabsEl;
+  let rankingScreen, myPageScreen, navBar;
   let albumViewMode = 'normal';
   const MODE_LABELS = { easy:'EASY', normal:'NORMAL', hard:'HARD' };
   function buildAlbumScreen(){
@@ -304,6 +478,183 @@
     albumDetail.classList.remove('hidden');
   }
 
+  // ---- ランキング画面 ----
+  let rankingStageKey = null; // defaults to the first stage once STAGES exists
+  let rankingModeKey = 'normal';
+  let rankingPeriod = 'alltime';
+  function buildRankingScreen(){
+    rankingScreen = document.createElement('div');
+    rankingScreen.className = 'overlay hidden';
+    rankingScreen.id = 'rankingScreen';
+    rankingScreen.innerHTML = `
+      <div class="albumHeader">
+        <span class="stageLabel">全国ランキング <span class="demoTag">DEMO RANKING</span></span>
+      </div>
+      <div class="modeToggleWrap" id="rankPeriodTabs">
+        <button class="modeBtn" data-p="today">今日</button>
+        <button class="modeBtn" data-p="week">今週</button>
+        <button class="modeBtn" data-p="alltime">歴代</button>
+        <button class="modeBtn" data-p="me">自分</button>
+      </div>
+      <div class="rankStageRow" id="rankStageRow"></div>
+      <div class="modeToggleWrap" id="rankModeTabs">
+        <button class="modeBtn" data-mode="easy">EASY</button>
+        <button class="modeBtn" data-mode="normal">NORMAL</button>
+        <button class="modeBtn" data-mode="hard">HARD</button>
+      </div>
+      <div class="rankList" id="rankList"></div>
+      <div class="rankMeBar" id="rankMeBar"></div>
+    `;
+    document.getElementById('stage').appendChild(rankingScreen);
+
+    const stageRow = rankingScreen.querySelector('#rankStageRow');
+    STAGES.forEach(s => {
+      const chip = document.createElement('button');
+      chip.className = 'rankStageChip';
+      chip.textContent = s.name;
+      chip.dataset.key = s.key;
+      chip.addEventListener('click', () => { rankingStageKey = s.key; renderRanking(); });
+      stageRow.appendChild(chip);
+    });
+    rankingScreen.querySelectorAll('#rankPeriodTabs .modeBtn').forEach(b => {
+      b.addEventListener('click', () => { rankingPeriod = b.dataset.p; renderRanking(); });
+    });
+    rankingScreen.querySelectorAll('#rankModeTabs .modeBtn').forEach(b => {
+      b.addEventListener('click', () => { rankingModeKey = b.dataset.mode; renderRanking(); });
+    });
+    rankingStageKey = STAGES[currentStageIndex] ? STAGES[currentStageIndex].key : STAGES[0].key;
+    rankingModeKey = gameMode;
+  }
+  // renderRanking() only ever reads from getRankingData() — swapping that
+  // function out for a real API call later needs no changes here.
+  function renderRanking(){
+    if(!rankingScreen) return;
+    rankingScreen.querySelectorAll('#rankPeriodTabs .modeBtn').forEach(b =>
+      b.classList.toggle('active', b.dataset.p === rankingPeriod));
+    rankingScreen.querySelectorAll('#rankModeTabs .modeBtn').forEach(b =>
+      b.classList.toggle('active', b.dataset.mode === rankingModeKey));
+    rankingScreen.querySelectorAll('.rankStageChip').forEach(c =>
+      c.classList.toggle('active', c.dataset.key === rankingStageKey));
+
+    const list = rankingScreen.querySelector('#rankList');
+    const meBar = rankingScreen.querySelector('#rankMeBar');
+    list.innerHTML = '';
+
+    if(rankingPeriod === 'me'){
+      list.classList.add('meMode');
+      STAGES.forEach(s => {
+        const data = getRankingData(s.key, rankingModeKey, rankingPeriod);
+        const mine = data.find(e => e.isPlayer);
+        const row = document.createElement('div');
+        row.className = 'rankRow';
+        row.innerHTML = `<span class="rankPos">${s.name}</span>
+          <span class="rankName">${mine ? currentTitle() : '未挑戦'}</span>
+          <span class="rankTime">${mine ? mine.time.toFixed(2) + 's' : '--'}</span>`;
+        list.appendChild(row);
+      });
+      meBar.innerHTML = '';
+      return;
+    }
+    list.classList.remove('meMode');
+
+    const data = getRankingData(rankingStageKey, rankingModeKey, rankingPeriod);
+    data.forEach((e, i) => {
+      const row = document.createElement('div');
+      row.className = 'rankRow' + (e.isPlayer ? ' isMe' : '');
+      row.innerHTML = `<span class="rankPos">${i+1}位</span>
+        <span class="rankName">${e.name}</span>
+        <span class="rankTime">${e.time.toFixed(2)}s</span>`;
+      list.appendChild(row);
+    });
+
+    const mine = data.find(e => e.isPlayer);
+    if(mine){
+      const idx = data.indexOf(mine);
+      const next = idx > 0 ? data[idx-1] : null;
+      const gap = next ? (mine.time - next.time).toFixed(2) : '0.00';
+      meBar.innerHTML =
+        '<div>あなたの順位 <b>' + (idx+1) + '位</b></div>' +
+        '<div>あなたの記録 <b>' + mine.time.toFixed(2) + 's</b></div>' +
+        (next ? '<div>次の順位まで あと <b>' + gap + 's</b></div>' : '<div>堂々の1位です</div>');
+    } else {
+      meBar.innerHTML = '<div>このステージ・モードはまだ記録がありません</div>';
+    }
+  }
+
+  // ---- マイページ ----
+  function buildMyPageScreen(){
+    myPageScreen = document.createElement('div');
+    myPageScreen.className = 'overlay hidden';
+    myPageScreen.id = 'myPageScreen';
+    myPageScreen.innerHTML = `
+      <div class="mpNameRow">
+        <input class="mpNameInput" id="mpNameInput" maxlength="12" value="">
+      </div>
+      <div class="mpTitle" id="mpTitleText"></div>
+      <div class="mpLevelRow">
+        <span id="mpLevelText"></span>
+        <div class="mpXpTrack"><div class="mpXpFill" id="mpXpFill"></div></div>
+        <span class="mpXpText" id="mpXpText"></span>
+      </div>
+      <div class="mpStatsGrid" id="mpStatsGrid"></div>
+    `;
+    document.getElementById('stage').appendChild(myPageScreen);
+    const input = myPageScreen.querySelector('#mpNameInput');
+    input.addEventListener('change', () => {
+      const v = input.value.trim().slice(0, 12);
+      profile.name = v || DEFAULT_PROFILE.name;
+      saveProfile();
+      refreshMyPage();
+    });
+  }
+  function refreshMyPage(){
+    if(!myPageScreen) return;
+    myPageScreen.querySelector('#mpNameInput').value = profile.name;
+    myPageScreen.querySelector('#mpTitleText').textContent = currentTitle();
+    myPageScreen.querySelector('#mpLevelText').textContent = 'Lv.' + profile.level;
+    const need = xpNeededForLevel(profile.level);
+    myPageScreen.querySelector('#mpXpFill').style.width = Math.min(100, (profile.xp/need)*100) + '%';
+    myPageScreen.querySelector('#mpXpText').textContent = profile.xp + ' / ' + need;
+    const albumTotal = Object.keys(loadAlbum('easy')).length + Object.keys(loadAlbum('normal')).length + Object.keys(loadAlbum('hard')).length;
+    const stats = [
+      ['アルバム', albumTotal + ' / ' + (STAGES.length*3)],
+      ['総クリア数', profile.totalClears + '回'],
+      ['Excellent Clear', profile.excellentCount + '回'],
+      ['No Break', profile.noBreakCount + '回'],
+      ['Perfect', profile.perfectCount + '回'],
+      ['最速記録', profile.fastestTime !== null ? profile.fastestTime.toFixed(2) + 's' : '--'],
+      ['プレイ回数', profile.totalPlays + '回'],
+      ['失敗回数', profile.totalFails + '回']
+    ];
+    myPageScreen.querySelector('#mpStatsGrid').innerHTML = stats.map(([label, val]) =>
+      '<div class="mpStatCard"><div class="mpStatLabel">' + label + '</div><div class="mpStatVal">' + val + '</div></div>'
+    ).join('');
+  }
+
+  // ---- 画面下部ナビゲーション ----
+  function buildNavBar(){
+    navBar = document.createElement('div');
+    navBar.className = 'navBar';
+    navBar.innerHTML = `
+      <button class="navBtn active" data-nav="play"><span class="navIcon navIconPlay"></span>遊ぶ</button>
+      <button class="navBtn" data-nav="album"><span class="navIcon navIconBook"></span>アルバム</button>
+      <button class="navBtn" data-nav="ranking"><span class="navIcon navIconCup"></span>ランキング</button>
+      <button class="navBtn" data-nav="mypage"><span class="navIcon navIconPerson"></span>マイページ</button>
+    `;
+    document.getElementById('stage').appendChild(navBar);
+    navBar.querySelectorAll('.navBtn').forEach(b => {
+      b.addEventListener('click', () => {
+        navBar.querySelectorAll('.navBtn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        const which = b.dataset.nav;
+        if(which === 'play'){ renderStageList(); showScreen(titleScreen); }
+        else if(which === 'album'){ albumViewMode = gameMode; renderAlbumGrid(); showScreen(albumScreen); }
+        else if(which === 'ranking'){ renderRanking(); showScreen(rankingScreen); }
+        else if(which === 'mypage'){ refreshMyPage(); showScreen(myPageScreen); }
+      });
+    });
+  }
+
   // Luxury dark-glass restyle for the stage list — injected here so
   // everything stays in this one file.
   (function injectClearBadgeStyles(){
@@ -370,7 +721,8 @@
         background: linear-gradient(180deg, var(--lantern,#ff8a3d), #d95d16);
         color:#1a0e04;
       }
-      #albumScreen{ padding: 20px 18px; overflow-y:auto; align-items:stretch; }
+      #albumScreen{ padding: 20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; }
+      #titleScreen{ padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
       .albumHeader{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
       .albumCloseBtn{
         font-family:'Zen Kaku Gothic New', sans-serif; font-size:12px; font-weight:700;
@@ -430,6 +782,134 @@
         pointer-events:none;
       }
       .kokToast.show{ opacity:1; transform:translate(-50%, 0); }
+      .kokRecordToast{
+        border-radius:18px; text-align:center; padding:16px 26px;
+        border:1px solid rgba(255,215,140,0.6);
+        box-shadow:0 0 30px rgba(255,180,90,0.25);
+      }
+      .kokRecordToast .recordTitle{
+        font-family:'Yuji Syuku',serif; font-size:15px; letter-spacing:3px;
+        color:#ffd23f; text-shadow:0 0 10px rgba(255,180,60,0.6);
+      }
+      .kokRecordToast .recordTime{ font-size:22px; font-weight:900; margin:4px 0; }
+      .kokRecordToast .recordSub{ font-size:11px; opacity:0.8; margin-top:2px; }
+
+      /* ---- bottom navigation ---- */
+      .navBar{
+        position:fixed; left:0; right:0; bottom:0; z-index:40;
+        display:flex; justify-content:space-around;
+        background:rgba(12,9,16,0.92); backdrop-filter:blur(6px);
+        border-top:1px solid rgba(255,205,120,0.18);
+        padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+      }
+      .navBtn{
+        flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;
+        background:none; border:none; color:rgba(251,243,223,0.5);
+        font-family:'Zen Kaku Gothic New', sans-serif; font-size:10px; font-weight:700;
+        padding:4px 2px;
+      }
+      .navBtn.active{ color:#ffcf7a; }
+      .navIcon{ width:20px; height:20px; position:relative; }
+      .navIconPlay::before{
+        content:''; position:absolute; left:5px; top:2px;
+        border-style:solid; border-width:8px 0 8px 13px;
+        border-color:transparent transparent transparent currentColor;
+      }
+      .navIconBook::before{
+        content:''; position:absolute; left:2px; top:3px; width:16px; height:13px;
+        border:2px solid currentColor; border-radius:2px;
+      }
+      .navIconBook::after{
+        content:''; position:absolute; left:10px; top:3px; width:1.5px; height:13px;
+        background:currentColor;
+      }
+      .navIconCup::before{
+        content:''; position:absolute; left:5px; top:2px; width:10px; height:9px;
+        border:2px solid currentColor; border-top:none; border-radius:0 0 5px 5px;
+      }
+      .navIconCup::after{
+        content:''; position:absolute; left:8px; top:11px; width:4px; height:5px;
+        background:currentColor;
+      }
+      .navIconPerson::before{
+        content:''; position:absolute; left:7px; top:2px; width:6px; height:6px;
+        border-radius:50%; background:currentColor;
+      }
+      .navIconPerson::after{
+        content:''; position:absolute; left:3px; top:10px; width:14px; height:7px;
+        border-radius:8px 8px 0 0; background:currentColor;
+      }
+
+      /* ---- ranking screen ---- */
+      #rankingScreen{ padding:20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; }
+      .demoTag{
+        font-size:9px; font-weight:900; letter-spacing:1px; color:#1a0e04;
+        background: linear-gradient(180deg, #ffe9b8, #d9a54a);
+        padding:2px 6px; border-radius:5px; margin-left:8px; vertical-align:middle;
+      }
+      .rankStageRow{
+        display:flex; gap:6px; overflow-x:auto; padding:4px 0 10px;
+        -webkit-overflow-scrolling:touch;
+      }
+      .rankStageChip{
+        flex:none; font-family:'Zen Kaku Gothic New', sans-serif; font-size:11px; font-weight:700;
+        padding:7px 13px; border-radius:999px; white-space:nowrap;
+        border:1px solid rgba(255,255,255,0.15); background:rgba(255,255,255,0.05); color:rgba(251,243,223,0.7);
+      }
+      .rankStageChip.active{
+        background: linear-gradient(180deg, var(--lantern,#ff8a3d), #d95d16);
+        color:#1a0e04; border-color:transparent;
+      }
+      .rankList{ display:flex; flex-direction:column; gap:6px; margin-top:10px; }
+      .rankRow{
+        display:flex; align-items:center; gap:10px;
+        background: linear-gradient(155deg, rgba(40,28,18,0.85), rgba(18,12,10,0.88));
+        border:1px solid rgba(255,255,255,0.1);
+        border-radius:12px; padding:9px 14px; font-size:13px;
+      }
+      .rankRow.isMe{ border-color:rgba(255,205,120,0.75); background: linear-gradient(155deg, rgba(70,45,18,0.9), rgba(30,18,10,0.9)); }
+      .rankPos{ width:46px; flex:none; font-weight:900; color:#ffd23f; font-size:12px; }
+      .rankName{ flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .rankTime{ flex:none; font-variant-numeric:tabular-nums; opacity:0.85; }
+      .rankList.meMode .rankPos{ width:auto; color:#fbf3df; font-weight:700; }
+      .rankMeBar{
+        margin-top:14px; padding:12px 16px; border-radius:14px;
+        background:rgba(255,205,120,0.08); border:1px solid rgba(255,205,120,0.3);
+        font-size:12px; line-height:1.9;
+      }
+      .rankMeBar b{ color:#ffd23f; }
+
+      /* ---- my page ---- */
+      #myPageScreen{ padding:28px 20px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; }
+      .mpNameRow{ display:flex; justify-content:center; margin-bottom:6px; }
+      .mpNameInput{
+        text-align:center; font-family:'Yuji Syuku',serif; font-size:20px;
+        background:none; border:none; border-bottom:1px solid rgba(255,205,120,0.4);
+        color:#fbf3df; padding:4px 8px; width:min(70vw, 260px);
+      }
+      .mpTitle{
+        text-align:center; font-size:12px; letter-spacing:2px; color:#ffd23f;
+        margin-bottom:16px;
+      }
+      .mpLevelRow{
+        display:flex; align-items:center; gap:8px; width:min(88vw,340px);
+        margin: 0 auto 22px;
+        font-size:12px; font-weight:700;
+      }
+      .mpXpTrack{ flex:1; height:7px; border-radius:99px; background:rgba(255,255,255,0.1); overflow:hidden; }
+      .mpXpFill{ height:100%; background: linear-gradient(90deg, #d9a54a, #ffe9b8); }
+      .mpXpText{ font-size:10px; opacity:0.7; white-space:nowrap; }
+      .mpStatsGrid{
+        display:grid; grid-template-columns:repeat(2,1fr); gap:10px;
+        width:min(90vw, 380px); margin:0 auto;
+      }
+      .mpStatCard{
+        background: linear-gradient(155deg, rgba(40,28,18,0.85), rgba(18,12,10,0.88));
+        border:1px solid rgba(255,205,120,0.22); border-radius:14px;
+        padding:12px; text-align:center;
+      }
+      .mpStatLabel{ font-size:10px; opacity:0.65; margin-bottom:4px; }
+      .mpStatVal{ font-size:16px; font-weight:900; color:#fbf3df; }
     `;
     document.head.appendChild(style);
   })();
@@ -909,12 +1389,21 @@
     [titleScreen, gameoverScreen, clearScreen].forEach(s => s.classList.add('hidden'));
     if(albumScreen) albumScreen.classList.add('hidden');
     if(albumDetail) albumDetail.classList.add('hidden');
+    if(rankingScreen) rankingScreen.classList.add('hidden');
+    if(myPageScreen) myPageScreen.classList.add('hidden');
     if(el) el.classList.remove('hidden');
   }
 
+  let lastStageIndexStarted = -1;
   function startGame(stageIndex){
     if(typeof stageIndex === 'number'){
-      if(stageIndex !== currentStageIndex) sessionFailCount = 0; // fresh stage pick
+      if(stageIndex !== lastStageIndexStarted){
+        sessionFailCount = 0; // fresh stage pick, not a retry
+        profile.totalPlays++;
+        addXP(5);
+        refreshMyPage();
+      }
+      lastStageIndexStarted = stageIndex;
       currentStageIndex = stageIndex;
     }
     buildStageCache();
@@ -924,6 +1413,7 @@
     showScreen(null);
     hud.classList.remove('hidden');
     legend.classList.remove('hidden');
+    navBar.classList.add('hidden');
     loop();
   }
 
@@ -931,6 +1421,8 @@
     mode = 'title';
     hud.classList.add('hidden');
     legend.classList.add('hidden');
+    navBar.classList.remove('hidden');
+    setNavActive('play');
     renderStageList();
     showScreen(titleScreen);
   }
@@ -938,6 +1430,8 @@
   function gameOver(x, y){
     mode = 'gameover';
     sessionFailCount++;
+    profile.totalFails++;
+    saveProfile();
     failPoint = {x, y};
     needle = null;
     handlePos = null;
@@ -1281,6 +1775,7 @@
     albumOpenBtn.addEventListener('click', () => {
       albumViewMode = gameMode;
       renderAlbumGrid();
+      setNavActive('album');
       showScreen(albumScreen);
     });
     // sits between the title and the stage list
@@ -1810,10 +2305,26 @@
     }
   }
 
+  // ---- ランキング・マイページ・ナビゲーション init ----
+  function setNavActive(which){
+    if(!navBar) return;
+    navBar.querySelectorAll('.navBtn').forEach(b => b.classList.toggle('active', b.dataset.nav === which));
+  }
+  buildRankingScreen();
+  buildMyPageScreen();
+  buildNavBar();
+  refreshMyPage();
+  // seed the ranking cache with any best times already saved from before
+  // this feature existed, across every stage and mode
+  ['easy','normal','hard'].forEach(m => {
+    const album = loadAlbum(m);
+    Object.keys(album).forEach(key => setPlayerRankingEntry(key, m, album[key].time));
+  });
+
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 36 — UI polish: collection bar, emoji removed, titles space';
+  const BUILD_TAG = 'BUILD 37 — my page, ranking, bottom nav';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
