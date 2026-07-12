@@ -16,7 +16,7 @@
   const clearTimeEl = document.getElementById('clearTime');
   const needleName = document.getElementById('needleName');
 
-  let W, H, cx, cy, R, safeBand, needleOffset, plateR;
+  let W, H, cx, cy, R, safeBand, INNER_SLACK, needleOffset, plateR;
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
@@ -606,6 +606,7 @@
     // safeBand is kept proportional to R (not W) so shrinking the shape
     // doesn't change the actual difficulty — same relative tolerance as before.
     safeBand = R * 0.065;
+    INNER_SLACK = R * 0.05; // a little forgiveness past the mold's edge before it's a real fail
     needleOffset = W * 0.20;
     buildStageCache();
     draw();
@@ -889,9 +890,9 @@
     const targetR = targetRCache[bucket];
     const edgeR = plateEdgeCache[bucket];
 
-    // Breaching the mold's own edge — zero tolerance, matches how real
-    // katanuki candy actually breaks the instant you cut too deep.
-    if(dist < targetR){
+    // Breaching the mold's edge fails, but with a little give past the
+    // line itself — the shallow-slack "asobi" this game had before.
+    if(dist < targetR - INNER_SLACK){
       currentState = 'red';
       gameOver(tip.x, tip.y);
       return;
@@ -1499,7 +1500,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 31 — wider smooth scrape brush';
+  const BUILD_TAG = 'BUILD 32 — inner slack restored';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
