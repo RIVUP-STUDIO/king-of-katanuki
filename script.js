@@ -337,14 +337,15 @@
       addXP(xpGain);
     }catch(e){ /* stats are best-effort — never let this block the album save below */ }
 
+    let record = null, isNewRecord = false, prevTime = null;
     try{
       const snapshot = captureThumbnail();
       const album = loadAlbum(gameMode);
       const prevRecord = album[stage.key];
-      const isNewRecord = !prevRecord || elapsed < prevRecord.time;
-      const prevTime = prevRecord ? prevRecord.time : null;
+      isNewRecord = !prevRecord || elapsed < prevRecord.time;
+      prevTime = prevRecord ? prevRecord.time : null;
 
-      const record = {
+      record = {
         key: stage.key, name: stage.name,
         image: snapshot || (prevRecord ? prevRecord.image : null), // keep the old photo rather than lose the record
         grade: grade.label, gradeCls: grade.cls,
@@ -355,7 +356,12 @@
       };
       album[stage.key] = record;
       localStorage.setItem(ALBUM_STORAGE_PREFIX + gameMode, JSON.stringify(album));
+    }catch(e){
+      showDebugToast('album save failed: ' + (e && e.message ? e.message : e));
+      return;
+    }
 
+    try{
       if(isNewRecord){
         const rankBefore = prevTime !== null ? rankForTime(stage.key, gameMode, prevTime) : null;
         setPlayerRankingEntry(stage.key, gameMode, elapsed);
@@ -364,11 +370,24 @@
       } else {
         showSavedToast();
       }
+    }catch(e){ showDebugToast('ranking update failed: ' + (e && e.message ? e.message : e)); }
 
+    try{
       renderAlbumGrid();
       refreshAlbumButton();
       refreshMyPage();
-    }catch(e){ /* storage unavailable/full — never let this break the game */ }
+    }catch(e){ showDebugToast('screen refresh failed: ' + (e && e.message ? e.message : e)); }
+  }
+  // Temporary diagnostic toast — shows the real error message on screen so
+  // a silent failure can actually be screenshotted and fixed, instead of
+  // just disappearing. Safe to remove once everything's confirmed solid.
+  function showDebugToast(msg){
+    const t = document.createElement('div');
+    t.className = 'kokToast show';
+    t.style.cssText += 'bottom:22%; background:rgba(120,20,20,0.95); max-width:88vw; white-space:normal; text-align:left;';
+    t.textContent = '⚠ ' + msg;
+    document.body.appendChild(t);
+    setTimeout(() => { t.remove(); }, 8000);
   }
   function showSavedToast(){
     const t = document.createElement('div');
@@ -1857,7 +1876,10 @@
       albumSaved = true;
       // wait one frame so this fully-lit frame (fireworks included) has
       // actually been painted before we grab it as the keepsake image
-      requestAnimationFrame(() => saveToAlbum());
+      requestAnimationFrame(() => {
+        try{ saveToAlbum(); }
+        catch(e){ showDebugToast('save trigger failed: ' + (e && e.message ? e.message : e)); }
+      });
     }
     // gentle float once the piece is fully lifted and the festival opens up
     const celebBob = celebT > 0 ? Math.sin(now / 420) * W*0.012 * celebT : 0;
@@ -2335,7 +2357,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 38 — fixed silent album-save failure';
+  const BUILD_TAG = 'BUILD 39 — diagnostic error toast for album save';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
