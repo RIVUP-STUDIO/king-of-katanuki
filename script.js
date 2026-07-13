@@ -308,18 +308,52 @@
   }
   function captureThumbnail(){
     try{
-      const THUMB = 420;
+      const THUMB = 240;
       const off = document.createElement('canvas');
       off.width = THUMB; off.height = THUMB;
       const octx = off.getContext('2d');
       octx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMB, THUMB);
-      return off.toDataURL('image/jpeg', 0.78);
+      return off.toDataURL('image/jpeg', 0.55);
     }catch(e){
       // A tainted canvas (or any other snapshot hiccup) must never take the
       // rest of the save down with it — the record still needs to count.
       return null;
     }
   }
+  // Tries to persist the album as-is; if the browser's storage quota is
+  // full, it never lets the numeric record (time/grade) get lost — first
+  // it drops this save's own photo, then it starts freeing space by
+  // dropping the oldest photos already stored, retrying each time.
+  function writeAlbumWithFallback(modeKey, album, justSavedKey){
+    const storageKey = ALBUM_STORAGE_PREFIX + modeKey;
+    try{
+      localStorage.setItem(storageKey, JSON.stringify(album));
+      return;
+    }catch(e){ /* likely QuotaExceededError — fall through and free space */ }
+
+    // This is a photo album first — the photo just taken is worth more than
+    // an old stat line, so free space by dropping other entries' photos
+    // (oldest first), not this one, before ever touching the new photo.
+    const byDateOldestFirst = Object.keys(album)
+      .filter(k => k !== justSavedKey && album[k].image)
+      .sort((a, b) => new Date(album[a].date) - new Date(album[b].date));
+    for(const k of byDateOldestFirst){
+      album[k].image = null;
+      try{
+        localStorage.setItem(storageKey, JSON.stringify(album));
+        return;
+      }catch(e){ /* keep freeing space */ }
+    }
+
+    // Every other photo in this mode's album is already gone and it still
+    // doesn't fit — only now give up on this one photo, keeping its numbers.
+    if(album[justSavedKey]) album[justSavedKey].image = null;
+    try{
+      localStorage.setItem(storageKey, JSON.stringify(album));
+      return;
+    }catch(e){ /* truly out of room — the record stays in memory for this session at least */ }
+  }
+
   function saveToAlbum(){
     const stage = STAGES[currentStageIndex];
     const noBreak = sessionFailCount === 0;
@@ -355,7 +389,7 @@
         fails: sessionFailCount
       };
       album[stage.key] = record;
-      localStorage.setItem(ALBUM_STORAGE_PREFIX + gameMode, JSON.stringify(album));
+      writeAlbumWithFallback(gameMode, album, stage.key);
     }catch(e){
       showDebugToast('album save failed: ' + (e && e.message ? e.message : e));
       return;
@@ -471,7 +505,10 @@
       const card = document.createElement('button');
       card.className = 'albumCard' + (rec ? '' : ' locked');
       if(rec){
-        card.innerHTML = `<img src="${rec.image}" alt="${s.name}">
+        const photo = rec.image
+          ? `<img src="${rec.image}" alt="${s.name}">`
+          : `<span class="albumNoPhoto" style="background:rgba(${s.fill},0.35)">記録のみ</span>`;
+        card.innerHTML = `${photo}
           <span class="albumCardName">${s.name}</span>
           <span class="albumCardGrade ${rec.gradeCls}">${rec.grade}</span>`;
         card.addEventListener('click', () => openAlbumDetail(rec, s));
@@ -488,9 +525,12 @@
     const d = new Date(rec.date);
     const dateStr = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
       String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    const photo = rec.image
+      ? `<img class="albumDetailImg" src="${rec.image}" alt="${rec.name}">`
+      : `<div class="albumDetailImg albumNoPhotoBig" style="background:rgba(${stage.fill},0.35)">写真は保存容量の都合で<br>今回は残せませんでした</div>`;
     albumDetail.innerHTML = `
       <button class="albumCloseBtn albumDetailClose" id="albumDetailClose">閉じる</button>
-      <img class="albumDetailImg" src="${rec.image}" alt="${rec.name}">
+      ${photo}
       <div class="albumDetailInfo">
         <div class="albumDetailName">${rec.name}</div>
         <div class="albumCardGrade big ${rec.gradeCls}">${rec.grade}</div>
@@ -767,6 +807,15 @@
         border-radius:16px; padding:8px; text-align:center;
       }
       .albumCard img{ width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px; }
+      .albumNoPhoto{
+        display:flex; align-items:center; justify-content:center;
+        width:100%; aspect-ratio:1/1; border-radius:10px;
+        font-size:11px; font-weight:700; color:rgba(251,243,223,0.8); text-align:center;
+      }
+      .albumNoPhotoBig{
+        display:flex; align-items:center; justify-content:center;
+        font-size:13px; line-height:1.7; text-align:center; color:rgba(251,243,223,0.85);
+      }
       .albumCard.locked{ opacity:0.45; }
       .albumLockedIcon{
         display:flex; align-items:center; justify-content:center;
@@ -2357,7 +2406,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 39 — diagnostic error toast for album save';
+  const BUILD_TAG = 'BUILD 41 — album prioritizes newest photo over old stats';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
