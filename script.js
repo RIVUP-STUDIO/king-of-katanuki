@@ -790,7 +790,11 @@
         color:#1a0e04;
       }
       #albumScreen{ padding: 20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; }
-      #titleScreen{ padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
+      #titleScreen{
+        padding-bottom: calc(80px + env(safe-area-inset-bottom));
+        overflow-y: auto;
+        justify-content: flex-start;
+      }
       .albumHeader{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
       .albumCloseBtn{
         font-family:'Zen Kaku Gothic New', sans-serif; font-size:12px; font-weight:700;
@@ -2406,7 +2410,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 41 — album prioritizes newest photo over old stats';
+  const BUILD_TAG = 'BUILD 42 — fixed unscrollable title screen overflow';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
