@@ -789,7 +789,7 @@
         background: linear-gradient(180deg, var(--lantern,#ff8a3d), #d95d16);
         color:#1a0e04;
       }
-      #albumScreen{ padding: 20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; }
+      #albumScreen{ padding: 20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; justify-content:flex-start; }
       #titleScreen{
         padding-bottom: calc(80px + env(safe-area-inset-bottom));
         overflow-y: auto;
@@ -922,7 +922,7 @@
       }
 
       /* ---- ranking screen ---- */
-      #rankingScreen{ padding:20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; }
+      #rankingScreen{ padding:20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; justify-content:flex-start; }
       .demoTag{
         font-size:9px; font-weight:900; letter-spacing:1px; color:#1a0e04;
         background: linear-gradient(180deg, #ffe9b8, #d9a54a);
@@ -961,7 +961,7 @@
       .rankMeBar b{ color:#ffd23f; }
 
       /* ---- my page ---- */
-      #myPageScreen{ padding:28px 20px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; }
+      #myPageScreen{ padding:28px 20px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; justify-content:flex-start; }
       .mpNameRow{ display:flex; justify-content:center; margin-bottom:6px; }
       .mpNameInput{
         text-align:center; font-family:'Yuji Syuku',serif; font-size:20px;
@@ -2410,7 +2410,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 42 — fixed unscrollable title screen overflow';
+  const BUILD_TAG = 'BUILD 43 — scroll fix extended to album/ranking/mypage';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
