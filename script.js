@@ -16,7 +16,7 @@
   const clearTimeEl = document.getElementById('clearTime');
   const needleName = document.getElementById('needleName');
 
-  let W, H, cx, cy, R, safeBand, INNER_SLACK, needleOffset, plateR;
+  let W, H, cx, cy, R, safeBand, needleOffset, plateR;
   const N_BUCKETS = 360;
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
@@ -1287,7 +1287,6 @@
     // safeBand is kept proportional to R (not W) so shrinking the shape
     // doesn't change the actual difficulty — same relative tolerance as before.
     safeBand = R * 0.065;
-    INNER_SLACK = R * 0.05; // a little forgiveness past the mold's edge before it's a real fail
     needleOffset = W * 0.20;
     buildStageCache();
     draw();
@@ -1591,9 +1590,9 @@
     const targetR = targetRCache[bucket];
     const edgeR = plateEdgeCache[bucket];
 
-    // Breaching the mold's edge fails, but with a little give past the
-    // line itself — the shallow-slack "asobi" this game had before.
-    if(dist < targetR - INNER_SLACK){
+    // Breaching the mold's edge — zero tolerance in HARD mode. The true
+    // outline is the wall; there's no give on the inside at all.
+    if(dist < targetR){
       currentState = 'red';
       gameOver(tip.x, tip.y);
       return;
@@ -2410,7 +2409,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 43 — scroll fix extended to album/ranking/mypage';
+  const BUILD_TAG = 'BUILD 44 — HARD mode strict inner edge (no slack)';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
