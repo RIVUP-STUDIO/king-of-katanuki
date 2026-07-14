@@ -15,6 +15,17 @@
   const backBtnClear = document.getElementById('backBtnClear');
   const clearTimeEl = document.getElementById('clearTime');
   const needleName = document.getElementById('needleName');
+  const remainingEl = document.createElement('div');
+  remainingEl.id = 'remainingSpots';
+  remainingEl.style.cssText = 'font-size:11px; font-weight:700; color:#ffd23f; text-align:right; ' +
+    'margin-top:2px; letter-spacing:0.5px; min-height:14px;';
+  document.getElementById('progressWrap').insertAdjacentElement('afterend', remainingEl);
+  function updateProgress(){
+    const pct = (erodedCount / N_BUCKETS) * 100;
+    progressBar.style.width = pct.toFixed(1) + '%';
+    const left = N_BUCKETS - erodedCount;
+    remainingEl.textContent = left > 0 ? ('削り残し あと' + left + '箇所') : '';
+  }
 
   let W, H, cx, cy, R, safeBand, needleOffset, plateR;
   const N_BUCKETS = 360;
@@ -991,6 +1002,14 @@
       }
       .mpStatLabel{ font-size:10px; opacity:0.65; margin-bottom:4px; }
       .mpStatVal{ font-size:16px; font-weight:900; color:#fbf3df; }
+
+      /* The base page disables all touch scrolling so dragging the needle
+         never pans the page during gameplay — but that same rule was
+         silently blocking scrolling inside every menu screen too. Opt
+         these back in to vertical panning only. */
+      .overlay, .stageList, .albumGrid, .rankList, .rankStageRow{
+        touch-action: pan-y !important;
+      }
     `;
     document.head.appendChild(style);
   })();
@@ -1599,7 +1618,7 @@
     }
 
     const now = performance.now();
-    const reach = safeBand * 1.7; // how close to the current candy surface counts as "touching" it
+    const reach = safeBand * 2.1; // how close to the current candy surface counts as "touching" it
     let scraped = false;
 
     if(dist <= edgeR + reach*0.3){
@@ -1635,8 +1654,7 @@
     currentState = scraped ? 'green' : 'yellow';
 
     if(scraped){
-      const pct = (erodedCount / N_BUCKETS) * 100;
-      progressBar.style.width = pct.toFixed(1) + '%';
+      updateProgress();
 
       // continuous "kari-kari" scratch sound + light vibration while carving,
       // plus an occasional sharper "break" tick as bits actually come loose
@@ -1721,8 +1739,7 @@
     }
 
     if(scraped){
-      const pct = (erodedCount / N_BUCKETS) * 100;
-      progressBar.style.width = pct.toFixed(1) + '%';
+      updateProgress();
       if(now - lastScratchAt > 90){
         lastScratchAt = now;
         playScratch();
@@ -1797,8 +1814,7 @@
     }
 
     if(scraped){
-      const pct = (erodedCount / N_BUCKETS) * 100;
-      progressBar.style.width = pct.toFixed(1) + '%';
+      updateProgress();
       if(now - lastScratchAt > 90){
         lastScratchAt = now;
         playScratch();
@@ -1980,6 +1996,24 @@
           ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
           ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
           ctx.stroke();
+        }
+        if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
+          // Close to finished — a bright pulsing outline so even a hair-thin
+          // remaining sliver (easy to miss in a tricky concave spot) stays
+          // clearly visible instead of disappearing to the eye. Only shown
+          // near the end so it doesn't distract during normal play.
+          const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+          ctx.save();
+          ctx.globalAlpha = 0.55 + 0.35 * pulse;
+          ctx.lineWidth = 2.4;
+          ctx.strokeStyle = 'rgba(255,205,60,1)';
+          ctx.shadowColor = 'rgba(255,205,60,0.9)';
+          ctx.shadowBlur = 6 + 4*pulse;
+          ctx.beginPath();
+          ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+          ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+          ctx.stroke();
+          ctx.restore();
         }
       }
     } else if(plateEdgePath){
@@ -2409,7 +2443,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 44 — HARD mode strict inner edge (no slack)';
+  const BUILD_TAG = 'BUILD 45 — fixed global scroll block, remaining-spot highlight';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
