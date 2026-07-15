@@ -1269,12 +1269,14 @@
   // One or two small candy-shell fragments knocked loose at the spot the
   // player just carved — this is what sells "you're breaking the candy
   // around the mold", not just tracing a line.
-  function spawnChipFragment(bucket, now){
+  function spawnChipFragment(bucket, now, atR){
     if(!shapePts.length) return;
     const a = (bucket / N_BUCKETS) * Math.PI * 2;
     const innerR = targetRCache[bucket];
     const edgeR = plateEdgeCache[bucket];
-    const originR = innerR + (edgeR - innerR) * (0.35 + Math.random()*0.3);
+    const originR = (typeof atR === 'number')
+      ? atR
+      : innerR + (edgeR - innerR) * (0.35 + Math.random()*0.3);
     const x = cx + originR * Math.cos(a);
     const y = cy + originR * Math.sin(a);
     const outDirX = Math.cos(a), outDirY = Math.sin(a);
@@ -1341,6 +1343,7 @@
   let mode = 'title'; // title | playing | gameover | clearReveal | clear
   let erosion = new Float32Array(N_BUCKETS); // 0 = full candy at this angle, 1 = fully scraped down to the mold
   let lastErodeAt = new Float32Array(N_BUCKETS);
+  let cutAccum = new Float32Array(N_BUCKETS); // progress toward the next "break" at this angle (HARD mode)
   let fullyEroded = new Uint8Array(N_BUCKETS); // 1 once that bucket first reached "done", for counting
   let erodedCount = 0;
   let currentState = null; // 'green' | 'yellow' | 'red' | null
@@ -1492,6 +1495,7 @@
   function resetGame(){
     erosion.fill(0);
     lastErodeAt.fill(0);
+    cutAccum.fill(0);
     fullyEroded.fill(0);
     erodedCount = 0;
     currentState = null;
@@ -1649,27 +1653,49 @@
     const now = performance.now();
     let scraped = false;
 
-    if(dist <= edgeR){
-      // Anywhere in the candy margin, right around the tip, wears down a
-      // little on every tick. Simple and predictable on purpose — what's
-      // under the needle is what erodes, full stop.
-      const BRUSH_RADIUS = 1;
-      for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
-        const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
-        const falloff = i === 0 ? 1 : 0.5; // full strength right under the tip, half just beside it
-        const bTarget = targetRCache[b];
-        if(dist < bTarget - 0.5) continue; // would be inside that bucket's mold — skip, not a fail
-        if(now - lastErodeAt[b] < EROSION_TICK_MS) continue; // pace the scraping rate
+    // ---- score-then-break model (matches real katanuki) ----
+    // The needle scores the candy at its own position. After a few
+    // kari-kari ticks at roughly the same depth, the candy OUTSIDE that
+    // exact point snaps off — so the visible removal and flying debris
+    // happen precisely at the needle tip, never at some distant edge.
+    const BREAK_TICKS = 4; // scoring passes needed before a piece snaps off
+    const BRUSH_RADIUS = 1;
+    for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
+      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+      const strength = i === 0 ? 1 : 0.5; // full right under the tip, half just beside it
+      const bTarget = targetRCache[b];
+      const bEdge = plateEdgeCache[b];
+      if(dist < bTarget - 0.5) continue; // inside that bucket's mold — skip, not a fail
+      const span = bEdge - bTarget;
+      const curSurf = bEdge - span * erosion[b]; // current outer surface of remaining candy
+      if(dist > curSurf + 1) continue; // in open air beyond the candy — nothing to score
+      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue; // pace the scraping rate
 
-        lastErodeAt[b] = now;
-        const wasDone = erosion[b] >= EROSION_DONE;
-        erosion[b] = Math.min(1, erosion[b] + EROSION_STEP * falloff);
-        scraped = true;
-        if(!wasDone && erosion[b] >= EROSION_DONE && !fullyEroded[b]){
-          fullyEroded[b] = 1;
-          erodedCount++;
+      lastErodeAt[b] = now;
+      scraped = true;
+      cutAccum[b] += strength / BREAK_TICKS;
+      if(Math.random() < 0.25) spawnChipFragment(b, now, dist); // fine dust while scoring
+
+      if(cutAccum[b] >= 1){
+        cutAccum[b] = 0;
+        // the piece outside the scored line snaps off: the surface drops
+        // to exactly where the needle is. Very close to the mold counts
+        // as fully cleared so a hair-thin film can't linger invisibly.
+        let newErosion = (bEdge - dist) / span;
+        if(dist - bTarget < span * 0.12) newErosion = 1;
+        if(newErosion > erosion[b]){
+          const wasDone = erosion[b] >= EROSION_DONE;
+          erosion[b] = Math.min(1, newErosion);
+          if(!wasDone && erosion[b] >= EROSION_DONE && !fullyEroded[b]){
+            fullyEroded[b] = 1;
+            erodedCount++;
+          }
+          // the actual break — a burst of debris right at the cut
+          spawnChipFragment(b, now, dist);
+          spawnChipFragment(b, now, Math.min(bEdge, dist + span*0.2));
+          playChipBreak();
+          vibrate(9);
         }
-        if(Math.random() < 0.35) spawnChipFragment(b, now);
       }
     }
 
@@ -1678,16 +1704,11 @@
     if(scraped){
       updateProgress();
 
-      // continuous "kari-kari" scratch sound + light vibration while carving,
-      // plus an occasional sharper "break" tick as bits actually come loose
+      // continuous "kari-kari" scratch sound + light vibration while scoring
       if(now - lastScratchAt > 90){
         lastScratchAt = now;
         playScratch();
         vibrate(5);
-      }
-      if(now - lastChipBreakAt > 260){
-        lastChipBreakAt = now;
-        playChipBreak();
       }
 
       // Clear condition is intentionally strict: every bucket's candy must
@@ -1996,8 +2017,7 @@
       for(let i = 0; i < N_BUCKETS; i++){
         const innerR = targetRCache[i];
         const edgeR = plateEdgeCache[i];
-        const erEase = 1 - Math.pow(1 - erosion[i], 2); // eases as it wears down
-        const outerR = edgeR - (edgeR - innerR) * erEase;
+        const outerR = edgeR - (edgeR - innerR) * erosion[i]; // true surface — matches the cut exactly
         if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
         const a0 = (i / N_BUCKETS) * Math.PI * 2;
         const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
@@ -2465,7 +2485,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 55 — HARD scraping simplified: no more surface gating';
+  const BUILD_TAG = 'BUILD 56 — score-then-break: candy snaps off exactly at the needle';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
