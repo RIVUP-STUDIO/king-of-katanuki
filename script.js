@@ -1010,6 +1010,12 @@
       .overlay, .stageList, .albumGrid, .rankList, .rankStageRow{
         touch-action: pan-y !important;
       }
+      /* .stageList used to scroll independently inside #titleScreen, which
+         (now that #titleScreen itself also scrolls) created two nested
+         scroll containers fighting each other on iOS — scrolling would
+         snap back before a tap could land. One unified scroll area fixes it. */
+      .stageList{ max-height:none !important; overflow-y:visible !important; }
+      .albumGrid{ overflow-y:visible !important; }
     `;
     document.head.appendChild(style);
   })();
@@ -2443,7 +2449,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 46 — HARD scrape reach pulled back to true surface';
+  const BUILD_TAG = 'BUILD 47 — fixed nested-scroll snapback on stage/album lists';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
