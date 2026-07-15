@@ -1647,24 +1647,18 @@
     }
 
     const now = performance.now();
-    const reach = safeBand * 1.6; // how close to the current candy surface counts as "touching" it
     let scraped = false;
 
-    if(dist <= edgeR + reach*0.3){
-      // Within the candy margin (or just barely past its outer rim) — try
-      // to scrape a narrow brush of buckets right around the tip, so what
-      // visibly disappears matches where the needle actually is, not a
-      // wide surrounding halo.
+    if(dist <= edgeR){
+      // Anywhere in the candy margin, right around the tip, wears down a
+      // little on every tick. Simple and predictable on purpose — what's
+      // under the needle is what erodes, full stop.
       const BRUSH_RADIUS = 1;
       for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
         const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
         const falloff = i === 0 ? 1 : 0.5; // full strength right under the tip, half just beside it
         const bTarget = targetRCache[b];
-        const bEdge = plateEdgeCache[b];
         if(dist < bTarget - 0.5) continue; // would be inside that bucket's mold — skip, not a fail
-        const curSurf = bEdge - (bEdge - bTarget) * erosion[b];
-        if(dist > curSurf + reach) continue; // too far outside the exposed surface to affect it
-        if(dist < curSurf - reach*4) continue; // way too far inside — the outer layer has to go first
         if(now - lastErodeAt[b] < EROSION_TICK_MS) continue; // pace the scraping rate
 
         lastErodeAt[b] = now;
@@ -2471,7 +2465,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 54 — loosened inner-surface tolerance (was too strict)';
+  const BUILD_TAG = 'BUILD 55 — HARD scraping simplified: no more surface gating';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
