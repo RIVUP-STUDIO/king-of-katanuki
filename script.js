@@ -802,7 +802,7 @@
       }
       #albumScreen{ padding: 20px 18px calc(90px + env(safe-area-inset-bottom)); overflow-y:auto; align-items:stretch; justify-content:flex-start; }
       #titleScreen{
-        padding-bottom: calc(80px + env(safe-area-inset-bottom));
+        padding-bottom: calc(120px + env(safe-area-inset-bottom));
         overflow-y: auto;
         justify-content: flex-start;
       }
@@ -1499,6 +1499,10 @@
     if(rankingScreen) rankingScreen.classList.add('hidden');
     if(myPageScreen) myPageScreen.classList.add('hidden');
     if(el) el.classList.remove('hidden');
+    // The canvas sits underneath every menu screen and can visually bleed
+    // through the translucent overlay background — make sure it never also
+    // steals taps meant for the buttons on top of it while a menu is open.
+    canvas.style.pointerEvents = el ? 'none' : 'auto';
   }
 
   let lastStageIndexStarted = -1;
@@ -2449,12 +2453,13 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 47 — fixed nested-scroll snapback on stage/album lists';
+  const BUILD_TAG = 'BUILD 48 — canvas no longer intercepts menu taps';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
     'color:rgba(255,255,255,0.4); z-index:9999; font-family:sans-serif; pointer-events:none;';
   document.body.appendChild(buildTagEl);
 
+  canvas.style.pointerEvents = 'none'; // page loads straight into the title screen
   resize();
 })();
