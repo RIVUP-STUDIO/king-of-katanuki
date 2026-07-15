@@ -1664,7 +1664,7 @@
         if(dist < bTarget - 0.5) continue; // would be inside that bucket's mold — skip, not a fail
         const curSurf = bEdge - (bEdge - bTarget) * erosion[b];
         if(dist > curSurf + reach) continue; // too far outside the exposed surface to affect it
-        if(dist < curSurf - reach) continue; // too far inside it — the outer layer has to go first
+        if(dist < curSurf - reach*4) continue; // way too far inside — the outer layer has to go first
         if(now - lastErodeAt[b] < EROSION_TICK_MS) continue; // pace the scraping rate
 
         lastErodeAt[b] = now;
@@ -2471,7 +2471,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 53 — erosion now tracks the true exposed surface';
+  const BUILD_TAG = 'BUILD 54 — loosened inner-surface tolerance (was too strict)';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
