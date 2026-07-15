@@ -1016,6 +1016,12 @@
          snap back before a tap could land. One unified scroll area fixes it. */
       .stageList{ max-height:none !important; overflow-y:visible !important; }
       .albumGrid{ overflow-y:visible !important; }
+      /* iOS Safari's address bar collapses/expands while scrolling, and
+         100vh recalculates every time that happens — mid-scroll, this
+         reshuffles the whole layout and makes it look like the page
+         "snaps back". 100dvh tracks the real visible viewport instead. */
+      #stage{ height: 100dvh !important; }
+      html, body{ height: 100dvh !important; }
     `;
     document.head.appendChild(style);
   })();
@@ -1316,7 +1322,11 @@
     buildStageCache();
     draw();
   }
-  window.addEventListener('resize', resize);
+  let resizeDebounceId = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeDebounceId);
+    resizeDebounceId = setTimeout(resize, 120);
+  });
 
   // ---- state ----
   let mode = 'title'; // title | playing | gameover | clearReveal | clear
@@ -2453,7 +2463,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 48 — canvas no longer intercepts menu taps';
+  const BUILD_TAG = 'BUILD 49 — 100dvh fix for iOS toolbar scroll jank';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
