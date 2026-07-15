@@ -1618,7 +1618,7 @@
     }
 
     const now = performance.now();
-    const reach = safeBand * 2.1; // how close to the current candy surface counts as "touching" it
+    const reach = safeBand * 1.6; // how close to the current candy surface counts as "touching" it
     let scraped = false;
 
     if(dist <= edgeR + reach*0.3){
@@ -2443,7 +2443,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 45 — fixed global scroll block, remaining-spot highlight';
+  const BUILD_TAG = 'BUILD 46 — HARD scrape reach pulled back to true surface';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
