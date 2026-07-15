@@ -1022,6 +1022,11 @@
          "snaps back". 100dvh tracks the real visible viewport instead. */
       #stage{ height: 100dvh !important; }
       html, body{ height: 100dvh !important; }
+      .stageListCredit{
+        text-align:center; font-size:11px; letter-spacing:2px;
+        color:rgba(251,243,223,0.4); margin-top:14px; padding-bottom:10px;
+        font-family:'Zen Kaku Gothic New', sans-serif;
+      }
     `;
     document.head.appendChild(style);
   })();
@@ -1216,6 +1221,10 @@
       stageList.appendChild(btn);
       drawStageThumb(btn.querySelector('canvas.thumb'), s);
     });
+    const credit = document.createElement('div');
+    credit.className = 'stageListCredit';
+    credit.textContent = 'produce by RIVUP';
+    stageList.appendChild(credit);
   }
 
   // Break the current shape's outline into wedge-shaped shards (center ->
@@ -2463,7 +2472,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 49 — 100dvh fix for iOS toolbar scroll jank';
+  const BUILD_TAG = 'BUILD 50 — produce by RIVUP credit added';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
