@@ -1327,7 +1327,7 @@
     // safeBand is kept proportional to R (not W) so shrinking the shape
     // doesn't change the actual difficulty — same relative tolerance as before.
     safeBand = R * 0.065;
-    needleOffset = W * 0.20;
+    needleOffset = W * 0.11;
     buildStageCache();
     draw();
   }
@@ -2470,7 +2470,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 51 — narrower HARD-mode scrape brush';
+  const BUILD_TAG = 'BUILD 52 — shortened needle offset from finger';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
