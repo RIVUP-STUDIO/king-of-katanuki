@@ -172,6 +172,43 @@
     }catch(e){ return false; }
   }
 
+
+  // ---- stage unlock progression (BUILD 59) ----
+  // EASY starts with stages 1-5 open. From stage 6 onward, each stage opens
+  // after the previous EASY stage is cleared. NORMAL and HARD open per stage
+  // once that same stage has been cleared on EASY.
+  const EASY_INITIAL_UNLOCK_COUNT = 5; // 日の丸〜提灯
+  function isStageUnlocked(stageIndex, modeKey){
+    const m = modeKey || gameMode;
+    if(stageIndex < 0 || stageIndex >= STAGES.length) return false;
+    const easyAlbum = loadAlbum('easy');
+    if(m === 'easy'){
+      if(stageIndex < EASY_INITIAL_UNLOCK_COUNT) return true;
+      const prev = STAGES[stageIndex - 1];
+      return !!(prev && easyAlbum[prev.key]);
+    }
+    const stage = STAGES[stageIndex];
+    return !!(stage && easyAlbum[stage.key]);
+  }
+  function unlockMessage(stageIndex, modeKey){
+    const m = modeKey || gameMode;
+    if(m === 'easy') return '前のEASYステージをクリアで解放';
+    return 'このステージのEASYクリアで解放';
+  }
+  function findNextUnlockedStageIndex(fromIndex, modeKey){
+    for(let step = 1; step <= STAGES.length; step++){
+      const idx = (fromIndex + step) % STAGES.length;
+      if(isStageUnlocked(idx, modeKey)) return idx;
+    }
+    return -1;
+  }
+  function allModesAllStagesCleared(){
+    return ['easy','normal','hard'].every(m => {
+      const album = loadAlbum(m);
+      return STAGES.every(s => !!album[s.key]);
+    });
+  }
+
   // ---- プレイヤープロフィール: level, XP, titles, lifetime stats.
   // Separate localStorage key — existing clear/album/mode data is untouched.
   const PROFILE_STORAGE_KEY = 'kok_profile_v1';
@@ -186,7 +223,8 @@
     noBreakCount: 0,
     perfectCount: 0,
     fastestTime: null,
-    selectedTitle: null // null = auto (level-based); reserved for future manual titles
+    selectedTitle: null, // null = auto (level-based); reserved for future manual titles
+    grandRewardUnlocked: false
   };
   function loadProfile(){
     try{
@@ -375,7 +413,7 @@
   function saveToAlbum(){
     const stage = STAGES[currentStageIndex];
     const noBreak = sessionFailCount === 0;
-    const oneStroke = strokeReleaseCount === 0;
+    const oneStroke = strokeReleaseCount <= 1;
     const isPerfect = elapsed <= perfectTimeThreshold(stage);
     const isExcellent = noBreak && oneStroke && isPerfect;
     const grade = gradeForRun(sessionFailCount, oneStroke, isPerfect);
@@ -431,6 +469,11 @@
       renderAlbumGrid();
       refreshAlbumButton();
       refreshMyPage();
+      if(allModesAllStagesCleared() && !profile.grandRewardUnlocked){
+        profile.grandRewardUnlocked = true;
+        saveProfile();
+        showGrandRewardToast();
+      }
     }catch(e){ showDebugToast('screen refresh failed: ' + (e && e.message ? e.message : e)); }
   }
   // Temporary diagnostic toast — shows the real error message on screen so
@@ -451,6 +494,17 @@
     document.body.appendChild(t);
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 400); }, 2200);
+  }
+
+  function showGrandRewardToast(){
+    const t = document.createElement('div');
+    t.className = 'kokToast kokRecordToast';
+    t.innerHTML = '<div class="recordTitle">ALL COMPLETE</div>' +
+      '<div class="recordTime">豪華報酬 解放</div>' +
+      '<div class="recordSub">EASY・NORMAL・HARD 全ステージ制覇</div>';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 500); }, 4200);
   }
   function showNewRecordToast(prevTime, newTime, rankBefore, rankAfter){
     const t = document.createElement('div');
@@ -776,6 +830,24 @@
         transform: rotate(4deg);
       }
       .stageBtn.isCleared .stageClearStamp{ display:block; }
+      .stageBtn.isLocked{
+        opacity:0.48;
+        filter:saturate(0.45);
+      }
+      .stageBtn.isLocked .num{
+        background:rgba(255,255,255,0.16) !important;
+        color:rgba(255,255,255,0.55) !important;
+        box-shadow:none;
+      }
+      .stageLockText{
+        display:block; margin-top:3px; font-size:9px; line-height:1.25;
+        color:rgba(251,243,223,0.72); letter-spacing:0.2px;
+      }
+      .stageLockBadge{
+        position:absolute; top:8px; right:10px; font-size:9px; font-weight:900;
+        color:#fbf3df; border:1px solid rgba(255,255,255,0.25);
+        background:rgba(12,9,16,0.78); padding:2px 7px; border-radius:5px;
+      }
 
       .albumOpenBtn{
         margin-top:2px; margin-bottom:10px;
@@ -1208,14 +1280,16 @@
 
   function renderStageList(){
     stageList.innerHTML = '';
-    const cleared = loadClearedStages();
     const album = loadAlbum(gameMode);
     STAGES.forEach((s, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'stageBtn' + (cleared.has(s.key) ? ' isCleared' : '');
-      const stars = '★'.repeat(s.difficulty) + '☆'.repeat(5 - s.difficulty);
+      const unlocked = isStageUnlocked(i, gameMode);
       const rec = album[s.key];
+      const btn = document.createElement('button');
+      btn.className = 'stageBtn' + (rec ? ' isCleared' : '') + (unlocked ? '' : ' isLocked');
+      btn.disabled = !unlocked;
+      const stars = '★'.repeat(s.difficulty) + '☆'.repeat(5 - s.difficulty);
       const bestTime = rec ? rec.time.toFixed(2) + 's' : '--';
+      const lockLine = unlocked ? '' : '<span class="stageLockText">' + unlockMessage(i, gameMode) + '</span>';
       btn.innerHTML =
         '<span class="num">' + (i+1) + '</span>' +
         '<canvas class="thumb"></canvas>' +
@@ -1223,11 +1297,11 @@
           '<span class="stageName">' + s.name + '</span>' +
           '<span class="stageStars">' + stars + '</span>' +
           '<span class="stageBestTime">BEST ' + bestTime + '</span>' +
+          lockLine +
         '</span>' +
-        '<span class="stageClearStamp">CLEAR</span>';
-      // Cleared or not, every stage stays fully playable — the badge is
-      // just a record, never a lock.
-      btn.addEventListener('click', () => startGame(i));
+        '<span class="stageClearStamp">CLEAR</span>' +
+        (unlocked ? '' : '<span class="stageLockBadge">LOCK</span>');
+      if(unlocked) btn.addEventListener('click', () => startGame(i));
       stageList.appendChild(btn);
       drawStageThumb(btn.querySelector('canvas.thumb'), s);
     });
@@ -1236,6 +1310,7 @@
     credit.textContent = 'produce by RIVUP';
     stageList.appendChild(credit);
   }
+
 
   // Break the current shape's outline into wedge-shaped shards (center ->
   // two neighboring outline points) that fly outward for the "shatter" effect.
@@ -1561,6 +1636,10 @@
 
   let lastStageIndexStarted = -1;
   function startGame(stageIndex){
+    if(typeof stageIndex === 'number' && !isStageUnlocked(stageIndex, gameMode)){
+      showDebugToast(unlockMessage(stageIndex, gameMode));
+      return;
+    }
     if(rafId !== null){
       cancelAnimationFrame(rafId);
       rafId = null;
@@ -1833,24 +1912,22 @@
 
     const now = performance.now();
     let scraped = false;
-    // BUILD 58: keep the削れ跡 directly under the needle instead of
-    // erasing a broad five-degree strip. The centre bucket is fully cut;
-    // its immediate neighbours only receive a shallow chip, producing a
-    // small natural-looking broken edge without making the trace feel wide.
+    // BUILD 59: EASY fully clears three neighboring buckets. This keeps
+    // the forgiving mode genuinely forgiving and prevents half-eroded teeth
+    // from creating extra cleanup work near the end of a trace.
     for(let i = -1; i <= 1; i++){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
       lastErodeAt[b] = now;
       const wasDone = erosion[b] >= EROSION_DONE;
-      const nextErosion = i === 0 ? 1 : Math.max(erosion[b], 0.34 + Math.random()*0.10);
-      erosion[b] = nextErosion;
+      erosion[b] = 1;
       scraped = true;
       strokeHasCarved = true;
-      if(i === 0 && !wasDone && !fullyEroded[b]){
+      if(!wasDone && !fullyEroded[b]){
         fullyEroded[b] = 1;
         erodedCount++;
       }
-      if(Math.random() < (i === 0 ? 0.30 : 0.12)) spawnChipFragment(b, now, snappedDist);
+      if(Math.random() < (i === 0 ? 0.30 : 0.16)) spawnChipFragment(b, now, snappedDist);
     }
     if(!scraped) return;
     updateProgress();
@@ -1948,8 +2025,9 @@
 
   retryBtn.addEventListener('click', () => startGame(currentStageIndex));
   nextBtn.addEventListener('click', () => {
-    const next = (currentStageIndex + 1) % STAGES.length;
-    startGame(next);
+    const next = findNextUnlockedStageIndex(currentStageIndex, gameMode);
+    if(next >= 0) startGame(next);
+    else goToStageSelect();
   });
   backBtnOver.addEventListener('click', goToStageSelect);
   backBtnClear.addEventListener('click', goToStageSelect);
@@ -2561,7 +2639,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 58 — PINPOINT CHIP: narrow candy erosion, needle length unchanged';
+  const BUILD_TAG = 'BUILD 59 — EASY FLOW: 3-bucket assist, stage unlock progression';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
