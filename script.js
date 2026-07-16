@@ -2221,6 +2221,50 @@
     ctx.strokeStyle = 'rgba(120,90,40,0.18)';
     if(plateEdgePath) ctx.stroke(plateEdgePath);
 
+    // BUILD 61 trace map: keep the mold edge visible at all times.
+    // Completed buckets stay green, unfinished buckets remain as a faint guide,
+    // and the last hidden gaps pulse yellow near completion. This is display
+    // only; the real clear judgment still comes from fullyEroded[].
+    if(mode === 'playing' && shapePts.length === N_BUCKETS){
+      const completion = erodedCount / N_BUCKETS;
+      const pulse = 0.5 + 0.5 * Math.sin(now / 210);
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+
+      for(let i = 0; i < N_BUCKETS; i++){
+        const j = (i + 1) % N_BUCKETS;
+        const p0 = shapePts[i];
+        const p1 = shapePts[j];
+        const done = fullyEroded[i] === 1 || erosion[i] >= EROSION_DONE;
+
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+
+        if(done){
+          ctx.lineWidth = Math.max(2.8, W * 0.009);
+          ctx.strokeStyle = 'rgba(63,224,138,0.96)';
+          ctx.shadowColor = 'rgba(63,224,138,0.72)';
+          ctx.shadowBlur = W * 0.012;
+        }else if(completion >= 0.88){
+          ctx.globalAlpha = 0.68 + 0.30 * pulse;
+          ctx.lineWidth = Math.max(3.2, W * 0.010);
+          ctx.strokeStyle = 'rgba(255,210,63,1)';
+          ctx.shadowColor = 'rgba(255,210,63,0.9)';
+          ctx.shadowBlur = W * (0.012 + 0.008 * pulse);
+        }else{
+          ctx.globalAlpha = 1;
+          ctx.lineWidth = Math.max(1.7, W * 0.0055);
+          ctx.strokeStyle = 'rgba(110,82,38,0.48)';
+          ctx.shadowBlur = 0;
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore();
+    }
+
     // candy-shell fragments knocked loose as the surrounding candy chips away
     if(chipFrags.length){
       const g = W * 0.7;
@@ -2657,7 +2701,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 60 — EASY SNAP: wider trace, faster outer-shell collapse';
+  const BUILD_TAG = 'BUILD 61 — GREEN TRACE: visible progress, yellow final gaps';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
