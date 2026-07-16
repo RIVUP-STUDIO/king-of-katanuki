@@ -1912,10 +1912,10 @@
 
     const now = performance.now();
     let scraped = false;
-    // BUILD 59: EASY fully clears three neighboring buckets. This keeps
-    // the forgiving mode genuinely forgiving and prevents half-eroded teeth
-    // from creating extra cleanup work near the end of a trace.
-    for(let i = -1; i <= 1; i++){
+    // BUILD 60: EASY clears a wider five-bucket trail. The player should
+    // be able to follow the outline once without doing fussy cleanup passes.
+    // Judgment remains based on the needle tip, but completion is generous.
+    for(let i = -2; i <= 2; i++){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
       lastErodeAt[b] = now;
@@ -1927,7 +1927,7 @@
         fullyEroded[b] = 1;
         erodedCount++;
       }
-      if(Math.random() < (i === 0 ? 0.30 : 0.16)) spawnChipFragment(b, now, snappedDist);
+      if(Math.random() < (i === 0 ? 0.30 : Math.abs(i) === 1 ? 0.16 : 0.08)) spawnChipFragment(b, now, snappedDist);
     }
     if(!scraped) return;
     updateProgress();
@@ -2153,7 +2153,25 @@
       for(let i = 0; i < N_BUCKETS; i++){
         const innerR = targetRCache[i];
         const edgeR = plateEdgeCache[i];
-        const outerR = edgeR - (edgeR - innerR) * erosion[i]; // true surface — matches the cut exactly
+
+        // BUILD 60 visual assist: EASY makes the surrounding shell collapse
+        // farther around the traced point than the actual progress buckets.
+        // This is presentation only. Completion still uses fullyEroded[], so
+        // the game stays honest while the plate stops feeling like busywork.
+        let visualErosion = erosion[i];
+        if(gameMode === 'easy' && visualErosion < 1){
+          const VISUAL_SPREAD = 7;
+          for(let d = 1; d <= VISUAL_SPREAD; d++){
+            const left = erosion[(i - d + N_BUCKETS) % N_BUCKETS];
+            const right = erosion[(i + d) % N_BUCKETS];
+            const neighbor = Math.max(left, right);
+            if(neighbor <= 0) continue;
+            const falloff = 1 - (d / (VISUAL_SPREAD + 1));
+            visualErosion = Math.max(visualErosion, neighbor * (0.72 + 0.28 * falloff));
+          }
+          if(visualErosion > 0.82) visualErosion = 1;
+        }
+        const outerR = edgeR - (edgeR - innerR) * visualErosion;
         if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
         const a0 = (i / N_BUCKETS) * Math.PI * 2;
         const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
@@ -2639,7 +2657,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 59 — EASY FLOW: 3-bucket assist, stage unlock progression';
+  const BUILD_TAG = 'BUILD 60 — EASY SNAP: wider trace, faster outer-shell collapse';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
