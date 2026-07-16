@@ -1742,23 +1742,9 @@
       0, 0, cssSize, cssSize
     );
 
-    const markerX = (failPoint.x - sx) / cropLogical * cssSize;
-    const markerY = (failPoint.y - sy) / cropLogical * cssSize;
-    lctx.save();
-    lctx.strokeStyle = '#ff3b3b';
-    lctx.fillStyle = 'rgba(255,59,59,.22)';
-    lctx.lineWidth = 3;
-    lctx.shadowColor = '#ff3b3b';
-    lctx.shadowBlur = 10;
-    lctx.beginPath();
-    lctx.arc(markerX, markerY, 12, 0, Math.PI*2);
-    lctx.fill();
-    lctx.stroke();
-    lctx.beginPath();
-    lctx.moveTo(markerX-18, markerY); lctx.lineTo(markerX+18, markerY);
-    lctx.moveTo(markerX, markerY-18); lctx.lineTo(markerX, markerY+18);
-    lctx.stroke();
-    lctx.restore();
+    // The loupe itself is enough to explain the failure point; a bright red
+    // crosshair made the review screen feel noisy and over-directed, so the
+    // close-up now stays clean and lets the enlarged breach speak for itself.
 
     const text = failMagnifierEl.querySelector('.failLoupeText');
     text.textContent = failDepth > 0.5
@@ -2782,7 +2768,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 63 — FAIL LOUPE: zoomed breach review';
+  const BUILD_TAG = 'BUILD 64 — FAIL LOUPE: clean zoom, no crosshair';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
