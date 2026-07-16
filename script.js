@@ -312,9 +312,16 @@
       return raw ? JSON.parse(raw) : {};
     }catch(e){ return {}; }
   }
-  function gradeForFails(n){
-    if(n === 0) return { label: 'Excellent Clear', cls: 'excellent' };
-    if(n <= 2) return { label: 'Perfect Clear', cls: 'perfect' };
+  function gradeForRun(fails, oneStroke, isPerfect){
+    if(fails === 0 && oneStroke && isPerfect){
+      return { label: 'Excellent Clear', cls: 'excellent' };
+    }
+    if(fails === 0){
+      return { label: 'No Break Clear', cls: 'perfect' };
+    }
+    if(fails <= 2){
+      return { label: 'Perfect Clear', cls: 'perfect' };
+    }
     return { label: 'Clear', cls: 'clear' };
   }
   function captureThumbnail(){
@@ -368,9 +375,10 @@
   function saveToAlbum(){
     const stage = STAGES[currentStageIndex];
     const noBreak = sessionFailCount === 0;
+    const oneStroke = strokeReleaseCount === 0;
     const isPerfect = elapsed <= perfectTimeThreshold(stage);
-    const isExcellent = noBreak && isPerfect;
-    const grade = gradeForFails(sessionFailCount);
+    const isExcellent = noBreak && oneStroke && isPerfect;
+    const grade = gradeForRun(sessionFailCount, oneStroke, isPerfect);
 
     try{
       profile.totalClears++;
@@ -397,7 +405,9 @@
         difficulty: stage.difficulty,
         time: elapsed,
         date: new Date().toISOString(),
-        fails: sessionFailCount
+        fails: sessionFailCount,
+        oneStroke: oneStroke,
+        releaseCount: strokeReleaseCount
       };
       album[stage.key] = record;
       writeAlbumWithFallback(gameMode, album, stage.key);
@@ -1368,6 +1378,18 @@
   let sessionFailCount = 0;    // fails since this stage was last freshly picked (survives retries)
   let albumSaved = false;      // guards against saving the same clear twice
 
+
+  // ---- BUILD 57: fair input tracking ----
+  let lastRawTip = null;
+  let strokeActive = false;
+  let strokeReleaseCount = 0;
+  let strokeHasCarved = false;
+  let failCracks = [];
+
+  function inputSampleStep(){
+    return Math.max(1.5, Math.min(3, safeBand * 0.34));
+  }
+
   function vibrate(pattern){
     if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} }
   }
@@ -1501,6 +1523,11 @@
     currentState = null;
     needle = null;
     handlePos = null;
+    lastRawTip = null;
+    strokeActive = false;
+    strokeReleaseCount = 0;
+    strokeHasCarved = false;
+    failCracks = [];
     startTime = null;
     elapsed = 0;
     failPoint = null;
@@ -1511,8 +1538,12 @@
     fireworks = [];
     dust = [];
     chipFrags = [];
+    albumSaved = false;
     progressBar.style.width = '0%';
+    remainingEl.textContent = '';
     timerEl.textContent = '0.0s';
+    lastScratchAt = 0;
+    lastChipBreakAt = 0;
   }
 
   function showScreen(el){
@@ -1530,9 +1561,13 @@
 
   let lastStageIndexStarted = -1;
   function startGame(stageIndex){
+    if(rafId !== null){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
     if(typeof stageIndex === 'number'){
       if(stageIndex !== lastStageIndexStarted){
-        sessionFailCount = 0; // fresh stage pick, not a retry
+        sessionFailCount = 0;
         profile.totalPlays++;
         addXP(5);
         refreshMyPage();
@@ -1567,8 +1602,18 @@
     profile.totalFails++;
     saveProfile();
     failPoint = {x, y};
+    failCracks = [];
+    for(let i = 0; i < 7; i++){
+      failCracks.push({
+        angle: Math.random() * Math.PI * 2,
+        length: W * 0.05 + Math.random() * W * 0.12,
+        branch: Math.random() < 0.55,
+        branchSide: Math.random() < 0.5 ? -1 : 1
+      });
+    }
     needle = null;
     handlePos = null;
+    lastRawTip = null;
     shardBornAt = performance.now();
     buildShards();
     vibrate([0, 60, 30, 90]);
@@ -1603,6 +1648,36 @@
   }
 
   // ---- input ----
+  // BUILD 57: fill the gaps between browser touch events so fast
+  // movement cannot skip a dangerous section or leave invisible holes.
+  function processInterpolatedMove(rawTip){
+    if(mode !== 'playing') return;
+    if(!lastRawTip){
+      judgeTipSample(rawTip);
+      lastRawTip = { x: rawTip.x, y: rawTip.y };
+      return;
+    }
+    const dx = rawTip.x - lastRawTip.x;
+    const dy = rawTip.y - lastRawTip.y;
+    const distance = Math.hypot(dx, dy);
+    const samples = Math.max(1, Math.ceil(distance / inputSampleStep()));
+    for(let i = 1; i <= samples; i++){
+      if(mode !== 'playing') break;
+      const t = i / samples;
+      judgeTipSample({
+        x: lastRawTip.x + dx * t,
+        y: lastRawTip.y + dy * t
+      });
+    }
+    lastRawTip = { x: rawTip.x, y: rawTip.y };
+  }
+
+  function judgeTipSample(rawTip){
+    if(gameMode === 'easy') handleMoveEasy(rawTip);
+    else if(gameMode === 'normal') handleMoveNormal(rawTip);
+    else handleMoveHard(rawTip);
+  }
+
   function pointerPos(e){
     const rect = canvas.getBoundingClientRect();
     const t = e.touches ? e.touches[0] : e;
@@ -1612,23 +1687,19 @@
   function handleMove(e){
     if(mode !== 'playing') return;
     e.preventDefault();
-    if(!audioCtx) initAudio();
+    if(!audioCtx){
+      initAudio();
+    }else if(audioCtx.state === 'suspended'){
+      audioCtx.resume().catch(() => {});
+    }
     const p = pointerPos(e);
     handlePos = p;
-
-    // Tip is offset above the finger so the fingertip never covers the
-    // point that actually gets judged. Near the top edge, shrink the
-    // offset so the tip stays on-canvas instead of clamping (which would
-    // make the tip "stick" under the finger).
     const maxOffset = Math.max(0, p.y - W*0.06);
     const offset = Math.min(needleOffset, maxOffset);
     const rawTip = { x: p.x, y: p.y - offset };
-
     if(startTime === null) startTime = performance.now();
-
-    if(gameMode === 'easy') handleMoveEasy(rawTip);
-    else if(gameMode === 'normal') handleMoveNormal(rawTip);
-    else handleMoveHard(rawTip);
+    strokeActive = true;
+    processInterpolatedMove(rawTip);
   }
 
   // ハードモード: free scraping — no snapping, the surrounding candy wears
@@ -1637,6 +1708,7 @@
     needle = tip;
     const dx = tip.x - cx, dy = tip.y - cy;
     const dist = Math.hypot(dx, dy);
+    if(dist < 0.001) return;
     const angleDeg = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
     const bucket = Math.round(angleDeg) % N_BUCKETS;
     const targetR = targetRCache[bucket];
@@ -1686,6 +1758,7 @@
         if(newErosion > erosion[b]){
           const wasDone = erosion[b] >= EROSION_DONE;
           erosion[b] = Math.min(1, newErosion);
+          strokeHasCarved = true;
           if(!wasDone && erosion[b] >= EROSION_DONE && !fullyEroded[b]){
             fullyEroded[b] = 1;
             erodedCount++;
@@ -1726,42 +1799,35 @@
   function handleMoveEasy(rawTip){
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
+    if(dist0 < 0.001){ needle = rawTip; return; }
     const angleDeg = ((Math.atan2(dy0, dx0) * 180 / Math.PI) + 360) % 360;
     const bucket = Math.round(angleDeg) % N_BUCKETS;
     const targetR = targetRCache[bucket];
+    const rawDiff = dist0 - targetR;
+    const innerWarning = safeBand * 0.42;
+    const innerFail = safeBand * 1.05;
 
-    const diffRaw = dist0 - targetR;
-    const magnetRange = safeBand * 2.6;
-    let snappedDist = dist0;
-    if(dist0 > 0.001 && Math.abs(diffRaw) < magnetRange){
-      const pull = 1 - Math.abs(diffRaw) / magnetRange;
-      snappedDist = dist0 - diffRaw * pull * 0.6;
+    if(rawDiff < -innerFail){
+      needle = rawTip;
+      if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
+      gameOver(rawTip.x, rawTip.y);
+      return;
     }
-    const dirX = dist0 > 0.001 ? dx0/dist0 : 1;
-    const dirY = dist0 > 0.001 ? dy0/dist0 : 0;
-    const tip = { x: cx + dirX*snappedDist, y: cy + dirY*snappedDist };
+
+    const magnetRange = safeBand * 2.5;
+    let snappedDist = dist0;
+    if(Math.abs(rawDiff) <= magnetRange){
+      const proximity = 1 - Math.abs(rawDiff) / magnetRange;
+      snappedDist = dist0 - rawDiff * proximity * proximity * 0.56;
+    }
+    snappedDist = Math.max(targetR - innerWarning, snappedDist);
+    const tip = { x: cx + dx0/dist0*snappedDist, y: cy + dy0/dist0*snappedDist };
     needle = tip;
-
     const diff = snappedDist - targetR;
-    const innerGreen = safeBand * 0.5;  // less room to dip inside than before
-    const outerGreen = safeBand;        // outward room unchanged
-    const easySlack = safeBand * 0.8;   // shallow dip past that still just warns
-    let newState;
-    if(diff >= -innerGreen && diff <= outerGreen) newState = 'green';
-    else if(diff > outerGreen) newState = 'yellow';
-    else if(diff > -(innerGreen + easySlack)) newState = 'yellow';
-    else newState = 'red';
-
+    const newState = (diff >= -innerWarning && diff <= safeBand*1.15) ? 'green' : 'yellow';
     if(newState !== currentState){
       currentState = newState;
-      if(newState === 'green') vibrate([0, 18, 20, 12]);
-      else if(newState === 'yellow') vibrate(6);
-      else if(newState === 'red') vibrate(40);
-    }
-
-    if(newState === 'red'){
-      gameOver(tip.x, tip.y);
-      return;
+      vibrate(newState === 'green' ? [0,12] : 5);
     }
     if(newState !== 'green') return;
 
@@ -1774,28 +1840,17 @@
       const wasDone = erosion[b] >= EROSION_DONE;
       erosion[b] = 1;
       scraped = true;
-      if(!wasDone && !fullyEroded[b]){
-        fullyEroded[b] = 1;
-        erodedCount++;
-      }
-      if(Math.random() < 0.5) spawnChipFragment(b, now);
+      strokeHasCarved = true;
+      if(!wasDone && !fullyEroded[b]){ fullyEroded[b] = 1; erodedCount++; }
+      if(Math.random() < 0.28) spawnChipFragment(b, now, snappedDist);
     }
-
-    if(scraped){
-      updateProgress();
-      if(now - lastScratchAt > 90){
-        lastScratchAt = now;
-        playScratch();
-        vibrate(5);
-      }
-      if(now - lastChipBreakAt > 260){
-        lastChipBreakAt = now;
-        playChipBreak();
-      }
-      if(erodedCount >= N_BUCKETS){
-        elapsed = (performance.now() - startTime) / 1000;
-        clearGame();
-      }
+    if(!scraped) return;
+    updateProgress();
+    if(now - lastScratchAt > 88){ lastScratchAt = now; playScratch(); vibrate(4); }
+    if(now - lastChipBreakAt > 260){ lastChipBreakAt = now; playChipBreak(); }
+    if(erodedCount >= N_BUCKETS){
+      elapsed = (performance.now() - startTime) / 1000;
+      clearGame();
     }
   }
 
@@ -1805,80 +1860,68 @@
   function handleMoveNormal(rawTip){
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
+    if(dist0 < 0.001){ needle = rawTip; return; }
     const angleDeg = ((Math.atan2(dy0, dx0) * 180 / Math.PI) + 360) % 360;
     const bucket = Math.round(angleDeg) % N_BUCKETS;
     const targetR = targetRCache[bucket];
+    const rawDiff = dist0 - targetR;
 
-    const diffRaw = dist0 - targetR;
-    const magnetRange = safeBand * 2.6;
-    let snappedDist = dist0;
-    if(dist0 > 0.001 && Math.abs(diffRaw) < magnetRange){
-      const pull = 1 - Math.abs(diffRaw) / magnetRange;
-      snappedDist = dist0 - diffRaw * pull * 0.6;
+    // Judge the real, unassisted tip first. Magnetism must never rescue
+    // a genuine inside breach.
+    if(rawDiff < 0){
+      needle = rawTip;
+      if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
+      gameOver(rawTip.x, rawTip.y);
+      return;
     }
-    const dirX = dist0 > 0.001 ? dx0/dist0 : 1;
-    const dirY = dist0 > 0.001 ? dy0/dist0 : 0;
-    const tip = { x: cx + dirX*snappedDist, y: cy + dirY*snappedDist };
+
+    const magnetRange = safeBand * 2.2;
+    let snappedDist = dist0;
+    if(rawDiff <= magnetRange){
+      const proximity = 1 - rawDiff / magnetRange;
+      snappedDist = Math.max(targetR, dist0 - rawDiff * proximity * proximity * 0.52);
+    }
+    const tip = { x: cx + dx0/dist0*snappedDist, y: cy + dy0/dist0*snappedDist };
     needle = tip;
-
-    const diff = snappedDist - targetR;
-    let newState;
-    if(diff >= 0 && diff <= safeBand) newState = 'green';
-    else if(diff > safeBand) newState = 'yellow';
-    else newState = 'red'; // any dip inside the line at all — instant out
-
+    const newState = (snappedDist - targetR <= safeBand) ? 'green' : 'yellow';
     if(newState !== currentState){
       currentState = newState;
-      if(newState === 'green') vibrate([0, 18, 20, 12]);
-      else if(newState === 'yellow') vibrate(6);
-      else if(newState === 'red') vibrate(40);
-    }
-
-    if(newState === 'red'){
-      gameOver(tip.x, tip.y);
-      return;
+      vibrate(newState === 'green' ? [0,12] : 5);
     }
     if(newState !== 'green') return;
 
     const now = performance.now();
     let scraped = false;
-    for(let i = -2; i <= 2; i++){
+    for(let i = -1; i <= 1; i++){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
       lastErodeAt[b] = now;
       const wasDone = erosion[b] >= EROSION_DONE;
       erosion[b] = 1;
       scraped = true;
-      if(!wasDone && !fullyEroded[b]){
-        fullyEroded[b] = 1;
-        erodedCount++;
-      }
-      if(Math.random() < 0.5) spawnChipFragment(b, now);
+      strokeHasCarved = true;
+      if(!wasDone && !fullyEroded[b]){ fullyEroded[b] = 1; erodedCount++; }
+      if(Math.random() < 0.35) spawnChipFragment(b, now, snappedDist);
     }
-
-    if(scraped){
-      updateProgress();
-      if(now - lastScratchAt > 90){
-        lastScratchAt = now;
-        playScratch();
-        vibrate(5);
-      }
-      if(now - lastChipBreakAt > 260){
-        lastChipBreakAt = now;
-        playChipBreak();
-      }
-      if(erodedCount >= N_BUCKETS){
-        elapsed = (performance.now() - startTime) / 1000;
-        clearGame();
-      }
+    if(!scraped) return;
+    updateProgress();
+    if(now - lastScratchAt > 82){ lastScratchAt = now; playScratch(); vibrate(4); }
+    if(now - lastChipBreakAt > 240){ lastChipBreakAt = now; playChipBreak(); }
+    if(erodedCount >= N_BUCKETS){
+      elapsed = (performance.now() - startTime) / 1000;
+      clearGame();
     }
   }
 
   function handleEnd(){
     if(mode !== 'playing') return;
+    if(strokeActive && strokeHasCarved) strokeReleaseCount++;
+    strokeActive = false;
+    strokeHasCarved = false;
     needle = null;
     handlePos = null;
     currentState = null;
+    lastRawTip = null;
   }
 
   canvas.addEventListener('touchstart', handleMove, {passive:false});
@@ -2261,18 +2304,33 @@
       });
     }
 
-    // crack effect
-    if(mode === 'gameover' && failPoint){
+    // crack effect — generated once at failure, so it no longer flickers
+    if(mode === 'gameover' && failPoint && failCracks.length){
+      ctx.save();
       ctx.strokeStyle = 'rgba(255,59,59,0.85)';
       ctx.lineWidth = 2;
-      for(let i=0;i<7;i++){
-        const ang = Math.random()*Math.PI*2;
-        const len = W*0.05 + Math.random()*W*0.12;
+      ctx.lineCap = 'round';
+      failCracks.forEach(crack => {
+        const ex = failPoint.x + Math.cos(crack.angle) * crack.length;
+        const ey = failPoint.y + Math.sin(crack.angle) * crack.length;
         ctx.beginPath();
         ctx.moveTo(failPoint.x, failPoint.y);
-        ctx.lineTo(failPoint.x + Math.cos(ang)*len, failPoint.y + Math.sin(ang)*len);
+        ctx.lineTo(ex, ey);
         ctx.stroke();
-      }
+        if(crack.branch){
+          const bx = failPoint.x + Math.cos(crack.angle) * crack.length * 0.55;
+          const by = failPoint.y + Math.sin(crack.angle) * crack.length * 0.55;
+          const branchAngle = crack.angle + crack.branchSide * 0.55;
+          ctx.beginPath();
+          ctx.moveTo(bx, by);
+          ctx.lineTo(
+            bx + Math.cos(branchAngle) * crack.length * 0.28,
+            by + Math.sin(branchAngle) * crack.length * 0.28
+          );
+          ctx.stroke();
+        }
+      });
+      ctx.restore();
     }
 
     // festival fireworks — radiating streaks that expand and fade, with a
@@ -2453,6 +2511,7 @@
   }
 
   function loop(){
+    rafId = null;
     if(mode === 'playing'){
       if(startTime !== null){
         elapsed = (performance.now() - startTime) / 1000;
@@ -2460,7 +2519,9 @@
       }
       draw();
       rafId = requestAnimationFrame(loop);
-    } else if(mode === 'gameover' || mode === 'clearReveal'){
+      return;
+    }
+    if(mode === 'gameover' || mode === 'clearReveal'){
       draw();
       rafId = requestAnimationFrame(loop);
     }
@@ -2485,7 +2546,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 56 — score-then-break: candy snaps off exactly at the needle';
+  const BUILD_TAG = 'BUILD 57 — FAIR TRACE: interpolated judgment, raw inner-edge fail';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
