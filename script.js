@@ -1731,7 +1731,7 @@
     // exact point snaps off — so the visible removal and flying debris
     // happen precisely at the needle tip, never at some distant edge.
     const BREAK_TICKS = 4; // scoring passes needed before a piece snaps off
-    const BRUSH_RADIUS = 1;
+    const BRUSH_RADIUS = 0; // BUILD 58: only the bucket directly under the needle is scored
     for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       const strength = i === 0 ? 1 : 0.5; // full right under the tip, half just beside it
@@ -1833,16 +1833,24 @@
 
     const now = performance.now();
     let scraped = false;
-    for(let i = -2; i <= 2; i++){
+    // BUILD 58: keep the削れ跡 directly under the needle instead of
+    // erasing a broad five-degree strip. The centre bucket is fully cut;
+    // its immediate neighbours only receive a shallow chip, producing a
+    // small natural-looking broken edge without making the trace feel wide.
+    for(let i = -1; i <= 1; i++){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
       lastErodeAt[b] = now;
       const wasDone = erosion[b] >= EROSION_DONE;
-      erosion[b] = 1;
+      const nextErosion = i === 0 ? 1 : Math.max(erosion[b], 0.34 + Math.random()*0.10);
+      erosion[b] = nextErosion;
       scraped = true;
       strokeHasCarved = true;
-      if(!wasDone && !fullyEroded[b]){ fullyEroded[b] = 1; erodedCount++; }
-      if(Math.random() < 0.28) spawnChipFragment(b, now, snappedDist);
+      if(i === 0 && !wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
+      }
+      if(Math.random() < (i === 0 ? 0.30 : 0.12)) spawnChipFragment(b, now, snappedDist);
     }
     if(!scraped) return;
     updateProgress();
@@ -1892,16 +1900,23 @@
 
     const now = performance.now();
     let scraped = false;
-    for(let i = -1; i <= 1; i++){
-      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
-      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
-      lastErodeAt[b] = now;
-      const wasDone = erosion[b] >= EROSION_DONE;
-      erosion[b] = 1;
-      scraped = true;
-      strokeHasCarved = true;
-      if(!wasDone && !fullyEroded[b]){ fullyEroded[b] = 1; erodedCount++; }
-      if(Math.random() < 0.35) spawnChipFragment(b, now, snappedDist);
+    // BUILD 58: NORMAL removes only the exact angular bucket touched by
+    // the needle tip. This makes the outside candy peel away as a thin,
+    // precise trail instead of disappearing in a three-degree band.
+    {
+      const b = bucket;
+      if(now - lastErodeAt[b] >= EROSION_TICK_MS){
+        lastErodeAt[b] = now;
+        const wasDone = erosion[b] >= EROSION_DONE;
+        erosion[b] = 1;
+        scraped = true;
+        strokeHasCarved = true;
+        if(!wasDone && !fullyEroded[b]){
+          fullyEroded[b] = 1;
+          erodedCount++;
+        }
+        if(Math.random() < 0.30) spawnChipFragment(b, now, snappedDist);
+      }
     }
     if(!scraped) return;
     updateProgress();
@@ -2546,7 +2561,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 57 — FAIR TRACE: interpolated judgment, raw inner-edge fail';
+  const BUILD_TAG = 'BUILD 58 — PINPOINT CHIP: narrow candy erosion, needle length unchanged';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
