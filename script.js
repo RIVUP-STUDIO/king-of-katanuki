@@ -1781,94 +1781,77 @@
     processInterpolatedMove(rawTip);
   }
 
-  // ハードモード: free scraping — no snapping, the surrounding candy wears
-  // away wherever the tip actually reaches, breaching the mold fails.
+  // ハードモード: no magnet and zero inside tolerance. Difficulty comes
+  // from staying exactly on the outer edge, not from repeatedly grinding
+  // invisible candy. Every valid movement immediately clears the touched arc.
   function handleMoveHard(tip){
     needle = tip;
     const dx = tip.x - cx, dy = tip.y - cy;
     const dist = Math.hypot(dx, dy);
     if(dist < 0.001) return;
+
     const angleDeg = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
     const bucket = Math.round(angleDeg) % N_BUCKETS;
     const targetR = targetRCache[bucket];
-    const edgeR = plateEdgeCache[bucket];
+    const rawDiff = dist - targetR;
 
-    // Breaching the mold's edge — zero tolerance in HARD mode. The true
-    // outline is the wall; there's no give on the inside at all.
-    if(dist < targetR){
+    // HARD's challenge: even the slightest dip inside the mold is failure.
+    if(rawDiff < 0){
       currentState = 'red';
       gameOver(tip.x, tip.y);
+      return;
+    }
+
+    // No snap. The player must keep the real needle tip inside this narrow
+    // outside corridor. Farther outside is safe, but it does not carve.
+    const carveRange = safeBand * 0.72;
+    if(rawDiff > carveRange){
+      currentState = 'yellow';
       return;
     }
 
     const now = performance.now();
     let scraped = false;
 
-    // ---- score-then-break model (matches real katanuki) ----
-    // The needle scores the candy at its own position. After a few
-    // kari-kari ticks at roughly the same depth, the candy OUTSIDE that
-    // exact point snaps off — so the visible removal and flying debris
-    // happen precisely at the needle tip, never at some distant edge.
-    const BREAK_TICKS = 4; // scoring passes needed before a piece snaps off
-    const BRUSH_RADIUS = 0; // BUILD 58: only the bucket directly under the needle is scored
+    // Immediate carve: movement equals visible progress. A three-bucket brush
+    // prevents microscopic leftovers between interpolated samples while still
+    // remaining noticeably stricter than EASY.
+    const BRUSH_RADIUS = 1;
     for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
-      const strength = i === 0 ? 1 : 0.5; // full right under the tip, half just beside it
-      const bTarget = targetRCache[b];
-      const bEdge = plateEdgeCache[b];
-      if(dist < bTarget - 0.5) continue; // inside that bucket's mold — skip, not a fail
-      const span = bEdge - bTarget;
-      const curSurf = bEdge - span * erosion[b]; // current outer surface of remaining candy
-      if(dist > curSurf + 1) continue; // in open air beyond the candy — nothing to score
-      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue; // pace the scraping rate
-
+      if(now - lastErodeAt[b] < 18) continue;
       lastErodeAt[b] = now;
-      scraped = true;
-      cutAccum[b] += strength / BREAK_TICKS;
-      if(Math.random() < 0.25) spawnChipFragment(b, now, dist); // fine dust while scoring
 
-      if(cutAccum[b] >= 1){
-        cutAccum[b] = 0;
-        // the piece outside the scored line snaps off: the surface drops
-        // to exactly where the needle is. Very close to the mold counts
-        // as fully cleared so a hair-thin film can't linger invisibly.
-        let newErosion = (bEdge - dist) / span;
-        if(dist - bTarget < span * 0.12) newErosion = 1;
-        if(newErosion > erosion[b]){
-          const wasDone = erosion[b] >= EROSION_DONE;
-          erosion[b] = Math.min(1, newErosion);
-          strokeHasCarved = true;
-          if(!wasDone && erosion[b] >= EROSION_DONE && !fullyEroded[b]){
-            fullyEroded[b] = 1;
-            erodedCount++;
-          }
-          // the actual break — a burst of debris right at the cut
-          spawnChipFragment(b, now, dist);
-          spawnChipFragment(b, now, Math.min(bEdge, dist + span*0.2));
-          playChipBreak();
-          vibrate(9);
-        }
+      const wasDone = erosion[b] >= EROSION_DONE;
+      erosion[b] = 1;
+      cutAccum[b] = 0;
+      strokeHasCarved = true;
+      scraped = true;
+
+      if(!wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
       }
+      if(Math.random() < 0.34) spawnChipFragment(b, now, targetRCache[b] + W*0.008);
     }
 
-    currentState = scraped ? 'green' : 'yellow';
+    currentState = 'green';
+    if(!scraped) return;
 
-    if(scraped){
-      updateProgress();
+    updateProgress();
+    if(now - lastScratchAt > 72){
+      lastScratchAt = now;
+      playScratch();
+      vibrate(5);
+    }
+    if(now - lastChipBreakAt > 210){
+      lastChipBreakAt = now;
+      playChipBreak();
+    }
 
-      // continuous "kari-kari" scratch sound + light vibration while scoring
-      if(now - lastScratchAt > 90){
-        lastScratchAt = now;
-        playScratch();
-        vibrate(5);
-      }
-
-      // Clear condition is intentionally strict: every bucket's candy must
-      // be fully scraped away. No partial-completion shortcut.
-      if(erodedCount >= N_BUCKETS){
-        elapsed = (performance.now() - startTime) / 1000;
-        clearGame();
-      }
+    if(erodedCount >= N_BUCKETS){
+      elapsed = (performance.now() - startTime) / 1000;
+      clearGame();
     }
   }
 
@@ -2701,7 +2684,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 61 — GREEN TRACE: visible progress, yellow final gaps';
+  const BUILD_TAG = 'BUILD 62 — HARD FLOW: instant carve, strict boundary';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
