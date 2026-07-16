@@ -1437,6 +1437,9 @@
   let startTime = null;
   let elapsed = 0;
   let failPoint = null;
+  let failSnapshot = null;
+  let failMagnifierEl = null;
+  let failDepth = 0;
   let rafId = null;
   let shards = [];
   let shardBornAt = 0;
@@ -1606,6 +1609,9 @@
     startTime = null;
     elapsed = 0;
     failPoint = null;
+    failSnapshot = null;
+    failDepth = 0;
+    if(failMagnifierEl) failMagnifierEl.style.display = 'none';
     shards = [];
     clearPhaseStart = null;
     liftTriggered = false;
@@ -1675,12 +1681,103 @@
     showScreen(titleScreen);
   }
 
+  function captureFailSnapshot(){
+    try{
+      const off = document.createElement('canvas');
+      off.width = canvas.width;
+      off.height = canvas.height;
+      const octx = off.getContext('2d');
+      octx.drawImage(canvas, 0, 0);
+      return off;
+    }catch(e){ return null; }
+  }
+
+  function renderFailMagnifier(){
+    if(!failPoint || !failSnapshot) return;
+
+    if(!failMagnifierEl){
+      failMagnifierEl = document.createElement('div');
+      failMagnifierEl.id = 'failMagnifier';
+      failMagnifierEl.style.cssText =
+        'display:none; flex-direction:column; align-items:center; gap:8px; ' +
+        'margin:0 auto 12px; pointer-events:none; animation:failLoupeIn .34s ease-out both;';
+      failMagnifierEl.innerHTML =
+        '<div class="failLoupeRing" style="position:relative; width:min(52vw,210px); aspect-ratio:1/1; ' +
+        'border-radius:50%; padding:6px; background:linear-gradient(145deg,#fff0c5,#a86a20); ' +
+        'box-shadow:0 12px 30px rgba(0,0,0,.48),0 0 22px rgba(255,185,80,.28);">' +
+          '<canvas class="failLoupeCanvas" style="display:block;width:100%;height:100%;border-radius:50%;background:#181016;"></canvas>' +
+          '<span style="position:absolute;width:54px;height:14px;right:-34px;bottom:8px;border-radius:12px; ' +
+          'background:linear-gradient(90deg,#b9792d,#6e3f16);transform:rotate(42deg);transform-origin:left center; ' +
+          'box-shadow:0 5px 9px rgba(0,0,0,.35);"></span>' +
+        '</div>' +
+        '<div class="failLoupeText" style="font-size:12px;font-weight:900;letter-spacing:.5px;color:#ffe4a6; ' +
+        'text-align:center;text-shadow:0 2px 5px rgba(0,0,0,.8);">ここで境界線の内側に入りました</div>';
+      const style = document.createElement('style');
+      style.textContent = '@keyframes failLoupeIn{0%{opacity:0;transform:scale(.72) translateY(14px)}100%{opacity:1;transform:scale(1) translateY(0)}}';
+      document.head.appendChild(style);
+      gameoverScreen.insertBefore(failMagnifierEl, gameoverScreen.firstChild);
+    }
+
+    failMagnifierEl.style.display = 'flex';
+    failMagnifierEl.style.animation = 'none';
+    void failMagnifierEl.offsetWidth;
+    failMagnifierEl.style.animation = 'failLoupeIn .34s ease-out both';
+
+    const loupe = failMagnifierEl.querySelector('.failLoupeCanvas');
+    const cssSize = 210;
+    const dpr = window.devicePixelRatio || 1;
+    loupe.width = cssSize * dpr;
+    loupe.height = cssSize * dpr;
+    const lctx = loupe.getContext('2d');
+    lctx.setTransform(dpr,0,0,dpr,0,0);
+    lctx.clearRect(0,0,cssSize,cssSize);
+
+    const sourceDpr = canvas.width / W;
+    const cropLogical = W * 0.24;
+    const sx = Math.max(0, Math.min(W - cropLogical, failPoint.x - cropLogical/2));
+    const sy = Math.max(0, Math.min(H - cropLogical, failPoint.y - cropLogical/2));
+    lctx.drawImage(
+      failSnapshot,
+      sx * sourceDpr, sy * sourceDpr, cropLogical * sourceDpr, cropLogical * sourceDpr,
+      0, 0, cssSize, cssSize
+    );
+
+    const markerX = (failPoint.x - sx) / cropLogical * cssSize;
+    const markerY = (failPoint.y - sy) / cropLogical * cssSize;
+    lctx.save();
+    lctx.strokeStyle = '#ff3b3b';
+    lctx.fillStyle = 'rgba(255,59,59,.22)';
+    lctx.lineWidth = 3;
+    lctx.shadowColor = '#ff3b3b';
+    lctx.shadowBlur = 10;
+    lctx.beginPath();
+    lctx.arc(markerX, markerY, 12, 0, Math.PI*2);
+    lctx.fill();
+    lctx.stroke();
+    lctx.beginPath();
+    lctx.moveTo(markerX-18, markerY); lctx.lineTo(markerX+18, markerY);
+    lctx.moveTo(markerX, markerY-18); lctx.lineTo(markerX, markerY+18);
+    lctx.stroke();
+    lctx.restore();
+
+    const text = failMagnifierEl.querySelector('.failLoupeText');
+    text.textContent = failDepth > 0.5
+      ? 'ここで内側に入りました  約' + failDepth.toFixed(1) + 'px'
+      : 'ここで境界線の内側に入りました';
+  }
+
   function gameOver(x, y){
     mode = 'gameover';
     sessionFailCount++;
     profile.totalFails++;
     saveProfile();
     failPoint = {x, y};
+    failSnapshot = captureFailSnapshot();
+    const fdx = x - cx, fdy = y - cy;
+    const fdist = Math.hypot(fdx, fdy);
+    const fdeg = ((Math.atan2(fdy, fdx) * 180 / Math.PI) + 360) % 360;
+    const fbucket = Math.round(fdeg) % N_BUCKETS;
+    failDepth = Math.max(0, targetRCache[fbucket] - fdist);
     failCracks = [];
     for(let i = 0; i < 7; i++){
       failCracks.push({
@@ -1700,6 +1797,7 @@
       hud.classList.add('hidden');
       legend.classList.add('hidden');
       showScreen(gameoverScreen);
+      renderFailMagnifier();
     }, 650);
   }
 
@@ -2684,7 +2782,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 62 — HARD FLOW: instant carve, strict boundary';
+  const BUILD_TAG = 'BUILD 63 — FAIL LOUPE: zoomed breach review';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
