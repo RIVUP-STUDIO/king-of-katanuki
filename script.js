@@ -2142,74 +2142,69 @@
     processInterpolatedMove(rawTip);
   }
 
-  // ハードモード: no magnet and zero inside tolerance. Difficulty comes
-  // from staying exactly on the outer edge, not from repeatedly grinding
-  // invisible candy. Every valid movement immediately clears the touched arc.
-  function handleMoveHard(tip){
-    needle = tip;
-    const dx = tip.x - cx, dy = tip.y - cy;
-    const dist = Math.hypot(dx, dy);
-    if(dist < 0.001) return;
-
-    const angleDeg = ((Math.atan2(dy, dx) * 180 / Math.PI) + 360) % 360;
+  // ハードモード: BUILD 72 makes the former NORMAL judgment the new HARD.
+  // It still offers a small visual magnet so the trace remains readable, but
+  // the inward tolerance is narrow and any deeper breach turns red and fails.
+  function handleMoveHard(rawTip){
+    const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
+    const dist0 = Math.hypot(dx0, dy0);
+    if(dist0 < 0.001){ needle = rawTip; return; }
+    const angleDeg = ((Math.atan2(dy0, dx0) * 180 / Math.PI) + 360) % 360;
     const bucket = Math.round(angleDeg) % N_BUCKETS;
     const targetR = targetRCache[bucket];
-    const rawDiff = dist - targetR;
+    const rawDiff = dist0 - targetR;
 
-    // HARD's challenge: even the slightest dip inside the mold is failure.
+    const isPinwheel = STAGES[currentStageIndex].key === 'kazaguruma';
+    const innerFail = safeBand * (isPinwheel ? 0.62 : 0.42);
+    if(rawDiff < -innerFail){
+      needle = rawTip;
+      if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
+      gameOver(rawTip.x, rawTip.y);
+      return;
+    }
     if(rawDiff < 0){
-      currentState = 'red';
-      gameOver(tip.x, tip.y);
+      needle = rawTip;
+      if(currentState !== 'yellow'){
+        currentState = 'yellow';
+        vibrate(5);
+      }
       return;
     }
 
-    // No snap. The player must keep the real needle tip inside this narrow
-    // outside corridor. Farther outside is safe, but it does not carve.
-    const carveRange = safeBand * 0.72;
-    if(rawDiff > carveRange){
-      currentState = 'yellow';
-      return;
+    const magnetRange = safeBand * 2.2;
+    let snappedDist = dist0;
+    if(rawDiff <= magnetRange){
+      const proximity = 1 - rawDiff / magnetRange;
+      snappedDist = Math.max(targetR, dist0 - rawDiff * proximity * proximity * 0.52);
     }
+    const tip = { x: cx + dx0/dist0*snappedDist, y: cy + dy0/dist0*snappedDist };
+    needle = tip;
+    const newState = (snappedDist - targetR <= safeBand) ? 'green' : 'yellow';
+    if(newState !== currentState){
+      currentState = newState;
+      vibrate(newState === 'green' ? [0,12] : 5);
+    }
+    if(newState !== 'green') return;
 
     const now = performance.now();
     let scraped = false;
-
-    // Immediate carve: movement equals visible progress. A three-bucket brush
-    // prevents microscopic leftovers between interpolated samples while still
-    // remaining noticeably stricter than EASY.
-    const BRUSH_RADIUS = 1;
-    for(let i = -BRUSH_RADIUS; i <= BRUSH_RADIUS; i++){
-      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
-      if(now - lastErodeAt[b] < 18) continue;
+    const b = bucket;
+    if(now - lastErodeAt[b] >= EROSION_TICK_MS){
       lastErodeAt[b] = now;
-
       const wasDone = erosion[b] >= EROSION_DONE;
       erosion[b] = 1;
-      cutAccum[b] = 0;
-      strokeHasCarved = true;
       scraped = true;
-
+      strokeHasCarved = true;
       if(!wasDone && !fullyEroded[b]){
         fullyEroded[b] = 1;
         erodedCount++;
       }
-      if(Math.random() < 0.34) spawnChipFragment(b, now, targetRCache[b] + W*0.008);
+      if(Math.random() < 0.30) spawnChipFragment(b, now, snappedDist);
     }
-
-    currentState = 'green';
     if(!scraped) return;
-
     updateProgress();
-    if(now - lastScratchAt > 72){
-      lastScratchAt = now;
-      playScratch();
-      vibrate(5);
-    }
-    if(now - lastChipBreakAt > 210){
-      lastChipBreakAt = now;
-      playChipBreak();
-    }
-
+    if(now - lastScratchAt > 82){ lastScratchAt = now; playScratch(); vibrate(4); }
+    if(now - lastChipBreakAt > 240){ lastChipBreakAt = now; playChipBreak(); }
     if(erodedCount >= N_BUCKETS){
       elapsed = (performance.now() - startTime) / 1000;
       clearGame();
@@ -2293,10 +2288,9 @@
     }
   }
 
-  // ノーマルモード: outside tracing stays precise, while a very shallow
-  // inside touch becomes a yellow warning instead of an immediate failure.
-  // This is especially important on sharp outlines such as the pinwheel,
-  // where a one-degree bucket change can otherwise feel harsher than it looks.
+  // ノーマルモード: BUILD 72 sits halfway between EASY and the former
+  // NORMAL. It allows a small inward green corridor, gives a wider yellow
+  // warning zone before failure, and uses slightly stronger magnet support.
   function handleMoveNormal(rawTip){
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
@@ -2306,18 +2300,19 @@
     const targetR = targetRCache[bucket];
     const rawDiff = dist0 - targetR;
 
-    // Yellow must never mean GAME OVER. A shallow inward touch is warning
-    // only; a deeper breach turns red and fails. The pinwheel gets a little
-    // extra room because its sharp radial jumps are visually deceptive.
     const isPinwheel = STAGES[currentStageIndex].key === 'kazaguruma';
-    const innerFail = safeBand * (isPinwheel ? 0.62 : 0.42);
+    const innerGreen = safeBand * (isPinwheel ? 0.26 : 0.20);
+    const innerFail = safeBand * (isPinwheel ? 0.88 : 0.72);
+
     if(rawDiff < -innerFail){
       needle = rawTip;
       if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
       gameOver(rawTip.x, rawTip.y);
       return;
     }
-    if(rawDiff < 0){
+
+    // Between the green corridor and the fail line is warning only.
+    if(rawDiff < -innerGreen){
       needle = rawTip;
       if(currentState !== 'yellow'){
         currentState = 'yellow';
@@ -2326,15 +2321,18 @@
       return;
     }
 
-    const magnetRange = safeBand * 2.2;
+    const magnetRange = safeBand * 2.38;
     let snappedDist = dist0;
-    if(rawDiff <= magnetRange){
-      const proximity = 1 - rawDiff / magnetRange;
-      snappedDist = Math.max(targetR, dist0 - rawDiff * proximity * proximity * 0.52);
+    if(Math.abs(rawDiff) <= magnetRange){
+      const proximity = 1 - Math.abs(rawDiff) / magnetRange;
+      snappedDist = dist0 - rawDiff * proximity * proximity * 0.54;
     }
+    snappedDist = Math.max(targetR - innerGreen, snappedDist);
+
     const tip = { x: cx + dx0/dist0*snappedDist, y: cy + dy0/dist0*snappedDist };
     needle = tip;
-    const newState = (snappedDist - targetR <= safeBand) ? 'green' : 'yellow';
+    const diff = snappedDist - targetR;
+    const newState = (diff >= -innerGreen && diff <= safeBand*1.08) ? 'green' : 'yellow';
     if(newState !== currentState){
       currentState = newState;
       vibrate(newState === 'green' ? [0,12] : 5);
@@ -2343,28 +2341,27 @@
 
     const now = performance.now();
     let scraped = false;
-    // BUILD 58: NORMAL removes only the exact angular bucket touched by
-    // the needle tip. This makes the outside candy peel away as a thin,
-    // precise trail instead of disappearing in a three-degree band.
-    {
-      const b = bucket;
-      if(now - lastErodeAt[b] >= EROSION_TICK_MS){
-        lastErodeAt[b] = now;
-        const wasDone = erosion[b] >= EROSION_DONE;
-        erosion[b] = 1;
-        scraped = true;
-        strokeHasCarved = true;
-        if(!wasDone && !fullyEroded[b]){
-          fullyEroded[b] = 1;
-          erodedCount++;
-        }
-        if(Math.random() < 0.30) spawnChipFragment(b, now, snappedDist);
+    // Two buckets keeps NORMAL more forgiving than HARD's exact one-bucket
+    // trace, while remaining clearly narrower than EASY's four-bucket brush.
+    const offsets = [0, 1];
+    for(const i of offsets){
+      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
+      lastErodeAt[b] = now;
+      const wasDone = erosion[b] >= EROSION_DONE;
+      erosion[b] = 1;
+      scraped = true;
+      strokeHasCarved = true;
+      if(!wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
       }
+      if(Math.random() < (i === 0 ? 0.30 : 0.16)) spawnChipFragment(b, now, snappedDist);
     }
     if(!scraped) return;
     updateProgress();
-    if(now - lastScratchAt > 82){ lastScratchAt = now; playScratch(); vibrate(4); }
-    if(now - lastChipBreakAt > 240){ lastChipBreakAt = now; playChipBreak(); }
+    if(now - lastScratchAt > 84){ lastScratchAt = now; playScratch(); vibrate(4); }
+    if(now - lastChipBreakAt > 245){ lastChipBreakAt = now; playChipBreak(); }
     if(erodedCount >= N_BUCKETS){
       elapsed = (performance.now() - startTime) / 1000;
       clearGame();
@@ -3211,7 +3208,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 71 — NORMAL FAIR WARNING: YELLOW NEVER FAILS';
+  const BUILD_TAG = 'BUILD 72 — MODE REBALANCE: NORMAL MID, OLD NORMAL TO HARD';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
