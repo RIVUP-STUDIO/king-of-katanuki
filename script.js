@@ -126,8 +126,32 @@
     const i0 = Math.floor(deg) % 360;
     const i1 = (i0 + 1) % 360;
     const t = deg - Math.floor(deg);
-    const ratio = KAZAGURUMA_SMOOTH_RATIOS[i0] +
+    let ratio = KAZAGURUMA_SMOOTH_RATIOS[i0] +
       (KAZAGURUMA_SMOOTH_RATIOS[i1] - KAZAGURUMA_SMOOTH_RATIOS[i0]) * t;
+
+    // BUILD 74: 持ち手だけは画像由来の点列を使わず、真っ直ぐな棒として
+    // 数式で作る。下方向90°を中心に、左右が平行で先端が水平な輪郭になる。
+    // これで真っ直ぐ針を動かした時に判定線が左右へ蛇行しない。
+    const handleDelta = Math.abs(angDiff(theta, Math.PI / 2));
+    const handleOuter = toRad(10);
+    if(handleDelta <= handleOuter){
+      const halfWidth = Rb * 0.13;
+      const bottomY = Rb * 1.40;
+      const c = Math.abs(Math.cos(theta));
+      const s = Math.max(0.0001, Math.sin(theta));
+      const sideR = c < 0.0001 ? Infinity : halfWidth / c;
+      const bottomR = bottomY / s;
+      const straightHandleR = Math.min(sideR, bottomR);
+
+      // 端の2°だけ元の羽根へ滑らかにつなぎ、角で急に跳ねないようにする。
+      const blendStart = toRad(8);
+      let mix = 1;
+      if(handleDelta > blendStart){
+        const u = (handleOuter - handleDelta) / (handleOuter - blendStart);
+        mix = u*u*(3 - 2*u);
+      }
+      ratio = ratio * (1 - mix) + (straightHandleR / Rb) * mix;
+    }
     return Rb * ratio;
   }
 
@@ -2236,8 +2260,10 @@
     const targetR = targetRCache[bucket];
     const rawDiff = dist0 - targetR;
     const isPinwheel = STAGES[currentStageIndex].key === 'kazaguruma';
-    const innerWarning = safeBand * (isPinwheel ? 0.62 : 0.42);
-    const innerFail = safeBand * (isPinwheel ? 1.38 : 1.05);
+    const pinwheelDeg = ((Math.atan2(dy0, dx0) * 180 / Math.PI) + 360) % 360;
+    const onPinwheelHandle = isPinwheel && pinwheelDeg >= 80 && pinwheelDeg <= 100;
+    const innerWarning = safeBand * (onPinwheelHandle ? 0.82 : isPinwheel ? 0.62 : 0.42);
+    const innerFail = safeBand * (onPinwheelHandle ? 1.80 : isPinwheel ? 1.38 : 1.05);
 
     if(rawDiff < -innerFail){
       needle = rawTip;
@@ -2246,7 +2272,7 @@
       return;
     }
 
-    const magnetRange = safeBand * (isPinwheel ? 3.0 : 2.5);
+    const magnetRange = safeBand * (onPinwheelHandle ? 3.5 : isPinwheel ? 3.0 : 2.5);
     let snappedDist = dist0;
     if(Math.abs(rawDiff) <= magnetRange){
       const proximity = 1 - Math.abs(rawDiff) / magnetRange;
@@ -3224,7 +3250,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 73 — SMOOTH PINWHEEL: softened handle outline';
+  const BUILD_TAG = 'BUILD 74 — STRAIGHT PINWHEEL HANDLE';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
