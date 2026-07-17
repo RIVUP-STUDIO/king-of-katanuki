@@ -222,6 +222,30 @@
   }
 
 
+  // ---- developer mode (BUILD 76) ----
+  // Prototype-only preview switches. These never write fake clear records,
+  // ranking times, album entries, XP, or achievements.
+  const DEV_SETTINGS_STORAGE_KEY = 'kok_dev_settings_v1';
+  function loadDevSettings(){
+    try{
+      const raw = localStorage.getItem(DEV_SETTINGS_STORAGE_KEY);
+      return raw ? Object.assign({ unlockAll:false, festivalFrame:false, starTip:false }, JSON.parse(raw))
+        : { unlockAll:false, festivalFrame:false, starTip:false };
+    }catch(e){ return { unlockAll:false, festivalFrame:false, starTip:false }; }
+  }
+  let devSettings = loadDevSettings();
+  function saveDevSettings(){
+    try{ localStorage.setItem(DEV_SETTINGS_STORAGE_KEY, JSON.stringify(devSettings)); }catch(e){}
+  }
+  function devToast(message){
+    const t = document.createElement('div');
+    t.className = 'kokToast';
+    t.textContent = message;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 350); }, 1800);
+  }
+
   // ---- stage unlock progression (BUILD 67) ----
   // EASY keeps its current route: stages 1-5 start open, then stages 6-10
   // unlock one by one. Clearing all 10 EASY stages opens every NORMAL stage.
@@ -233,6 +257,7 @@
   }
   function isStageUnlocked(stageIndex, modeKey){
     const m = modeKey || gameMode;
+    if(devSettings.unlockAll) return stageIndex >= 0 && stageIndex < STAGES.length;
     if(stageIndex < 0 || stageIndex >= STAGES.length) return false;
     if(m === 'easy'){
       if(stageIndex < EASY_INITIAL_UNLOCK_COUNT) return true;
@@ -331,7 +356,7 @@
     }
     return false;
   }
-  function hasFestivalAlbumFrame(){ return !!albumFrameRewards.festival; }
+  function hasFestivalAlbumFrame(){ return !!albumFrameRewards.festival || !!devSettings.festivalFrame; }
   function albumPhotoMarkup(rec, stage, detail){
     const noPhoto = detail
       ? `<div class="albumPhotoBase albumNoPhotoBig" style="background:rgba(${stage.fill},0.35)">写真は保存容量の都合で<br>今回は残せませんでした</div>`
@@ -362,7 +387,7 @@
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = 16;
-    if(selectedTipSkin === 'star' && tipRewards.star){
+    if(selectedTipSkin === 'star' && (tipRewards.star || devSettings.starTip)){
       const outer = radius * 1.35;
       const inner = outer * 0.46;
       ctx.beginPath();
@@ -922,6 +947,7 @@
         <span class="mpXpText" id="mpXpText"></span>
       </div>
       <div class="mpStatsGrid" id="mpStatsGrid"></div>
+      <button id="openDevModeBtn" type="button" style="margin:18px auto 0;padding:9px 16px;border-radius:999px;border:1px solid rgba(255,205,120,.32);background:rgba(255,255,255,.05);color:rgba(251,243,223,.7);font-size:11px;font-weight:800;letter-spacing:1px;">DEV MODE</button>
     `;
     document.getElementById('stage').appendChild(myPageScreen);
     const input = myPageScreen.querySelector('#mpNameInput');
@@ -930,6 +956,57 @@
       profile.name = v || DEFAULT_PROFILE.name;
       saveProfile();
       refreshMyPage();
+    });
+    myPageScreen.querySelector('#openDevModeBtn').addEventListener('click', openDeveloperPanel);
+  }
+
+  let developerPanelEl = null;
+  function openDeveloperPanel(){
+    if(!developerPanelEl){
+      developerPanelEl = document.createElement('div');
+      developerPanelEl.id = 'developerPanel';
+      developerPanelEl.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(4,3,8,.86);display:flex;align-items:center;justify-content:center;padding:22px;';
+      developerPanelEl.innerHTML = `
+        <div style="width:min(88vw,360px);background:linear-gradient(155deg,#251b15,#100d12);border:1px solid rgba(255,205,120,.38);border-radius:20px;padding:20px;box-shadow:0 18px 50px rgba(0,0,0,.6);color:#fbf3df;">
+          <div style="font-size:18px;font-weight:900;letter-spacing:1px;margin-bottom:5px;">開発者モード</div>
+          <div style="font-size:11px;opacity:.62;line-height:1.6;margin-bottom:16px;">クリア記録やランキングには影響しないプレビュー機能です。</div>
+          <button class="devToggleBtn" data-dev="festivalFrame"></button>
+          <button class="devToggleBtn" data-dev="starTip"></button>
+          <button class="devToggleBtn" data-dev="unlockAll"></button>
+          <button id="devCloseBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:#fbf3df;font-weight:800;">閉じる</button>
+        </div>`;
+      developerPanelEl.querySelectorAll('.devToggleBtn').forEach(btn => {
+        btn.style.cssText = 'display:block;width:100%;margin:8px 0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,205,120,.25);background:rgba(255,255,255,.055);color:#fbf3df;text-align:left;font-size:13px;font-weight:800;';
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.dev;
+          devSettings[key] = !devSettings[key];
+          if(key === 'starTip') selectedTipSkin = devSettings.starTip ? 'star' : (tipRewards.star ? 'star' : 'circle');
+          saveDevSettings();
+          refreshDeveloperPanel();
+          renderStageList();
+          renderAlbumGrid();
+          refreshMyPage();
+          devToast(devSettings[key] ? 'プレビューをONにしました' : 'プレビューをOFFにしました');
+        });
+      });
+      developerPanelEl.querySelector('#devCloseBtn').addEventListener('click', () => developerPanelEl.style.display = 'none');
+      document.body.appendChild(developerPanelEl);
+    }
+    refreshDeveloperPanel();
+    developerPanelEl.style.display = 'flex';
+  }
+  function refreshDeveloperPanel(){
+    if(!developerPanelEl) return;
+    const labels = {
+      festivalFrame:'豪華額プレビュー',
+      starTip:'星の針先プレビュー',
+      unlockAll:'全ステージ解放プレビュー'
+    };
+    developerPanelEl.querySelectorAll('.devToggleBtn').forEach(btn => {
+      const on = !!devSettings[btn.dataset.dev];
+      btn.textContent = labels[btn.dataset.dev] + '　' + (on ? 'ON' : 'OFF');
+      btn.style.borderColor = on ? 'rgba(255,205,120,.85)' : 'rgba(255,205,120,.25)';
+      btn.style.color = on ? '#ffd27a' : '#fbf3df';
     });
   }
   function refreshMyPage(){
@@ -3246,11 +3323,12 @@
   syncTipRewardsFromProgress();
   // Backfill the HARD reward for existing full-HARD clear data.
   syncAlbumFrameRewardFromProgress();
+  if(devSettings.starTip) selectedTipSkin = 'star';
 
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 75 — SOFTER NORMAL: wider safe corridor';
+  const BUILD_TAG = 'BUILD 76 — DEV MODE: reward and unlock previews';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
