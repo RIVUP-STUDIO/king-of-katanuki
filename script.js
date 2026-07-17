@@ -529,6 +529,7 @@
   // ---- album screen (built once, toggled with .hidden like the other overlays) ----
   let albumScreen, albumGrid, albumDetail, albumTabsEl;
   let rankingScreen, myPageScreen, navBar;
+  let tutorialScreen, tutorialStep = 0;
   let albumViewMode = 'normal';
   const MODE_LABELS = { easy:'EASY', normal:'NORMAL', hard:'HARD' };
   function buildAlbumScreen(){
@@ -1633,6 +1634,7 @@
     if(albumDetail) albumDetail.classList.add('hidden');
     if(rankingScreen) rankingScreen.classList.add('hidden');
     if(myPageScreen) myPageScreen.classList.add('hidden');
+    if(tutorialScreen) tutorialScreen.classList.add('hidden');
     if(el) el.classList.remove('hidden');
     // The canvas sits underneath every menu screen and can visually bleed
     // through the translucent overlay background — make sure it never also
@@ -2148,6 +2150,148 @@
     refresh();
     titleScreen.insertBefore(wrap, stageList);
   })();
+
+
+  // ---- first-play tutorial -------------------------------------------------
+  // Kept as its own small state machine so future app onboarding, unlock
+  // explanations and controller-specific hints can be added without touching
+  // the carving engine itself.
+  const TUTORIAL_STORAGE_KEY = 'kok_tutorial_seen_v1';
+  const TUTORIAL_STEPS = [
+    {
+      kicker:'STEP 1 / 4', title:'針を動かそう',
+      body:'画面を指でなぞると、針先が指の少し上についてきます。',
+      visual:'needle'
+    },
+    {
+      kicker:'STEP 2 / 4', title:'緑のラインを削ろう',
+      body:'型の縁をなぞると緑の線が伸びます。緑を一周つなげれば成功です。',
+      visual:'green'
+    },
+    {
+      kicker:'STEP 3 / 4', title:'内側は割れる',
+      body:'針先が型の内側へ入ると失敗。外側から縁を狙うのがコツです。',
+      visual:'red'
+    },
+    {
+      kicker:'STEP 4 / 4', title:'一周できたら型抜き成功',
+      body:'まずはEASY「日の丸」で、カリカリする感触を試してみよう。',
+      visual:'clear'
+    }
+  ];
+
+  function tutorialVisual(kind){
+    if(kind === 'needle') return '<div class="tutDemo tutNeedle"><span class="tutFinger"></span><span class="tutShaft"></span><span class="tutTip"></span><span class="tutArrow">↑</span></div>';
+    if(kind === 'green') return '<div class="tutDemo"><span class="tutRing base"></span><span class="tutRing progress"></span><span class="tutDot green"></span></div>';
+    if(kind === 'red') return '<div class="tutDemo"><span class="tutRing base"></span><span class="tutDot red"></span><span class="tutCrack">×</span></div>';
+    return '<div class="tutDemo"><span class="tutRing gold"></span><span class="tutPiece">抜</span><span class="tutSpark s1">✦</span><span class="tutSpark s2">✦</span></div>';
+  }
+
+  function renderTutorialStep(){
+    if(!tutorialScreen) return;
+    const step = TUTORIAL_STEPS[tutorialStep];
+    tutorialScreen.querySelector('.tutKicker').textContent = step.kicker;
+    tutorialScreen.querySelector('.tutTitle').textContent = step.title;
+    tutorialScreen.querySelector('.tutBody').textContent = step.body;
+    tutorialScreen.querySelector('.tutVisual').innerHTML = tutorialVisual(step.visual);
+    tutorialScreen.querySelector('.tutBack').style.visibility = tutorialStep === 0 ? 'hidden' : 'visible';
+    tutorialScreen.querySelector('.tutNext').textContent = tutorialStep === TUTORIAL_STEPS.length - 1 ? 'やってみる' : 'つぎへ';
+    tutorialScreen.querySelectorAll('.tutPageDot').forEach((d,i) => d.classList.toggle('active', i === tutorialStep));
+  }
+
+  function openTutorial(force){
+    if(!tutorialScreen) return;
+    if(!force){
+      try{ if(localStorage.getItem(TUTORIAL_STORAGE_KEY) === '1') return; }catch(e){}
+    }
+    tutorialStep = 0;
+    renderTutorialStep();
+    showScreen(tutorialScreen);
+    if(navBar) navBar.classList.add('hidden');
+  }
+
+  function finishTutorial(){
+    try{ localStorage.setItem(TUTORIAL_STORAGE_KEY, '1'); }catch(e){}
+    setGameMode('easy');
+    renderStageList();
+    refreshAlbumButton();
+    startGame(0);
+  }
+
+  function buildTutorialScreen(){
+    tutorialScreen = document.createElement('div');
+    tutorialScreen.id = 'tutorialScreen';
+    tutorialScreen.className = 'overlay hidden';
+    tutorialScreen.innerHTML = `
+      <button class="tutSkip">スキップ</button>
+      <div class="tutCard">
+        <div class="tutKicker"></div>
+        <div class="tutVisual"></div>
+        <div class="tutTitle"></div>
+        <div class="tutBody"></div>
+        <div class="tutDots">${TUTORIAL_STEPS.map((_,i)=>'<span class="tutPageDot" data-i="'+i+'"></span>').join('')}</div>
+        <div class="tutActions">
+          <button class="tutBack">もどる</button>
+          <button class="tutNext">つぎへ</button>
+        </div>
+      </div>`;
+    document.getElementById('stage').appendChild(tutorialScreen);
+    tutorialScreen.querySelector('.tutSkip').addEventListener('click', finishTutorial);
+    tutorialScreen.querySelector('.tutBack').addEventListener('click', () => {
+      tutorialStep = Math.max(0, tutorialStep - 1); renderTutorialStep();
+    });
+    tutorialScreen.querySelector('.tutNext').addEventListener('click', () => {
+      if(tutorialStep < TUTORIAL_STEPS.length - 1){ tutorialStep++; renderTutorialStep(); }
+      else finishTutorial();
+    });
+    tutorialScreen.querySelectorAll('.tutPageDot').forEach(d => d.addEventListener('click', () => {
+      tutorialStep = Number(d.dataset.i) || 0; renderTutorialStep();
+    }));
+
+    const style = document.createElement('style');
+    style.textContent = `
+      #tutorialScreen{z-index:80;padding:22px 18px calc(26px + env(safe-area-inset-bottom));background:radial-gradient(circle at 50% 30%,rgba(79,42,78,.96),rgba(10,8,16,.99) 70%);}
+      .tutSkip{position:absolute;top:18px;right:18px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);color:rgba(255,255,255,.72);border-radius:999px;padding:7px 13px;font-weight:700;font-size:11px;}
+      .tutCard{width:min(88vw,370px);padding:24px 22px 20px;border-radius:24px;background:linear-gradient(160deg,rgba(47,31,25,.96),rgba(17,12,17,.97));border:1px solid rgba(255,205,120,.34);box-shadow:0 24px 60px rgba(0,0,0,.48);text-align:center;}
+      .tutKicker{font-size:10px;letter-spacing:2px;color:#d9a54a;font-weight:900;margin-bottom:8px;}
+      .tutVisual{height:190px;display:flex;align-items:center;justify-content:center;}
+      .tutTitle{font-family:'Yuji Syuku',serif;font-size:23px;color:#fff4d9;margin:2px 0 8px;}
+      .tutBody{font-size:13px;line-height:1.75;color:rgba(255,247,229,.78);min-height:48px;}
+      .tutDots{display:flex;justify-content:center;gap:7px;margin:18px 0 14px;}
+      .tutPageDot{width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,.2);transition:.2s;}
+      .tutPageDot.active{width:21px;border-radius:999px;background:#ffb347;}
+      .tutActions{display:flex;gap:10px;}
+      .tutActions button{flex:1;border-radius:14px;padding:12px 8px;font-weight:900;font-size:13px;}
+      .tutBack{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.15);color:#fff4d9;}
+      .tutNext{border:none;background:linear-gradient(180deg,#ff9b45,#e86717);color:#1c0e04;box-shadow:0 7px 0 #8f3a0d;transform:translateY(-3px);}
+      .tutDemo{position:relative;width:150px;height:150px;}
+      .tutRing{position:absolute;inset:18px;border-radius:50%;border:8px solid rgba(255,236,190,.35);}
+      .tutRing.progress{border-color:#3fe08a;border-left-color:rgba(255,236,190,.25);filter:drop-shadow(0 0 8px rgba(63,224,138,.65));transform:rotate(18deg);}
+      .tutRing.gold{border-color:#ffd77f;box-shadow:0 0 25px rgba(255,190,80,.45);}
+      .tutDot{position:absolute;width:18px;height:18px;border-radius:50%;left:66px;top:9px;box-shadow:0 0 12px currentColor;}
+      .tutDot.green{background:#3fe08a;color:#3fe08a;}
+      .tutDot.red{background:#ff3b3b;color:#ff3b3b;left:57px;top:38px;}
+      .tutCrack{position:absolute;left:61px;top:46px;color:#ff3b3b;font-size:34px;font-weight:900;text-shadow:0 0 10px rgba(255,59,59,.7);}
+      .tutNeedle .tutFinger{position:absolute;width:48px;height:48px;border-radius:50%;background:rgba(255,210,165,.35);left:51px;bottom:5px;}
+      .tutNeedle .tutShaft{position:absolute;width:9px;height:112px;border-radius:9px;background:#d8b978;left:71px;bottom:28px;transform:rotate(-8deg);transform-origin:bottom;}
+      .tutNeedle .tutTip{position:absolute;width:18px;height:18px;border-radius:50%;background:#3fe08a;left:58px;top:7px;box-shadow:0 0 16px #3fe08a;}
+      .tutArrow{position:absolute;right:8px;top:48px;color:#ffd77f;font-size:34px;animation:tutFloat .8s ease-in-out infinite alternate;}
+      .tutPiece{position:absolute;left:49px;top:48px;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(188,0,45,.88);color:white;font-family:'Yuji Syuku',serif;font-size:22px;animation:tutLift 1.2s ease-in-out infinite alternate;}
+      .tutSpark{position:absolute;color:#ffd77f;font-size:24px;animation:tutTwinkle .7s ease-in-out infinite alternate;}.tutSpark.s1{left:16px;top:25px}.tutSpark.s2{right:12px;top:48px;animation-delay:.25s}
+      .tutorialReplayBtn{width:min(84vw,320px);margin:0 0 10px;padding:10px 14px;border-radius:14px;border:1px solid rgba(255,205,120,.28);background:rgba(255,255,255,.04);color:#fbf3df;font-weight:800;font-size:12px;letter-spacing:1px;}
+      @keyframes tutFloat{to{transform:translateY(-10px)}} @keyframes tutLift{to{transform:translateY(-14px) rotate(4deg)}} @keyframes tutTwinkle{to{opacity:.25;transform:scale(.72)}}
+    `;
+    document.head.appendChild(style);
+    renderTutorialStep();
+  }
+
+  function addTutorialReplayButton(){
+    const btn = document.createElement('button');
+    btn.className = 'tutorialReplayBtn';
+    btn.textContent = '遊び方を見る';
+    btn.addEventListener('click', () => openTutorial(true));
+    titleScreen.insertBefore(btn, stageList);
+  }
 
   // ---- drawing ----
   function draw(){
@@ -2754,6 +2898,8 @@
     if(!navBar) return;
     navBar.querySelectorAll('.navBtn').forEach(b => b.classList.toggle('active', b.dataset.nav === which));
   }
+  buildTutorialScreen();
+  addTutorialReplayButton();
   buildRankingScreen();
   buildMyPageScreen();
   buildNavBar();
@@ -2768,7 +2914,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 64 — FAIL LOUPE: clean zoom, no crosshair';
+  const BUILD_TAG = 'BUILD 65 — FIRST PLAY: four-step tutorial';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
@@ -2777,4 +2923,5 @@
 
   canvas.style.pointerEvents = 'none'; // page loads straight into the title screen
   resize();
+  setTimeout(() => openTutorial(false), 180);
 })();
