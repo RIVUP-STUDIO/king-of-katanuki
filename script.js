@@ -25,9 +25,10 @@
   carveHelpBtn.id = 'carveHelpBtn';
   carveHelpBtn.type = 'button';
   carveHelpBtn.textContent = '🔍 残りを探す';
-  carveHelpBtn.style.cssText = 'display:none;margin:6px 0 0 auto;padding:6px 10px;border-radius:999px;' +
-    'border:1px solid rgba(255,210,90,.55);background:rgba(25,16,12,.78);color:#ffe39a;' +
-    'font-size:11px;font-weight:900;letter-spacing:.4px;';
+  carveHelpBtn.style.cssText = 'display:none;position:fixed;left:50%;bottom:calc(54px + env(safe-area-inset-bottom));' +
+    'transform:translateX(-50%);z-index:60;margin:0;padding:8px 14px;border-radius:999px;' +
+    'border:1px solid rgba(255,210,90,.55);background:rgba(25,16,12,.88);color:#ffe39a;' +
+    'font-size:12px;font-weight:900;letter-spacing:.4px;box-shadow:0 6px 16px rgba(0,0,0,.28);';
   remainingEl.insertAdjacentElement('afterend', carveHelpBtn);
   carveHelpBtn.addEventListener('click', showRemainingHelp);
 
