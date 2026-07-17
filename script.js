@@ -2343,8 +2343,8 @@
     const rawDiff = dist0 - targetR;
 
     const isPinwheel = STAGES[currentStageIndex].key === 'kazaguruma';
-    const innerGreen = safeBand * (isPinwheel ? 0.26 : 0.20);
-    const innerFail = safeBand * (isPinwheel ? 0.88 : 0.72);
+    const innerGreen = safeBand * (isPinwheel ? 0.45 : 0.32);
+    const innerFail = safeBand * (isPinwheel ? 1.35 : 1.00);
 
     if(rawDiff < -innerFail){
       needle = rawTip;
@@ -2363,18 +2363,18 @@
       return;
     }
 
-    const magnetRange = safeBand * 2.38;
+    const magnetRange = safeBand * (isPinwheel ? 3.0 : 2.65);
     let snappedDist = dist0;
     if(Math.abs(rawDiff) <= magnetRange){
       const proximity = 1 - Math.abs(rawDiff) / magnetRange;
-      snappedDist = dist0 - rawDiff * proximity * proximity * 0.54;
+      snappedDist = dist0 - rawDiff * proximity * proximity * 0.60;
     }
     snappedDist = Math.max(targetR - innerGreen, snappedDist);
 
     const tip = { x: cx + dx0/dist0*snappedDist, y: cy + dy0/dist0*snappedDist };
     needle = tip;
     const diff = snappedDist - targetR;
-    const newState = (diff >= -innerGreen && diff <= safeBand*1.08) ? 'green' : 'yellow';
+    const newState = (diff >= -innerGreen && diff <= safeBand*1.20) ? 'green' : 'yellow';
     if(newState !== currentState){
       currentState = newState;
       vibrate(newState === 'green' ? [0,12] : 5);
@@ -2385,7 +2385,7 @@
     let scraped = false;
     // Two buckets keeps NORMAL more forgiving than HARD's exact one-bucket
     // trace, while remaining clearly narrower than EASY's four-bucket brush.
-    const offsets = [0, 1];
+    const offsets = [-1, 0, 1];
     for(const i of offsets){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
@@ -3250,7 +3250,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 74 — STRAIGHT PINWHEEL HANDLE';
+  const BUILD_TAG = 'BUILD 75 — SOFTER NORMAL: wider safe corridor';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
