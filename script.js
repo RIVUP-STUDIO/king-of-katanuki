@@ -270,6 +270,56 @@
     requestAnimationFrame(() => t.classList.add('show'));
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 500); }, 4300);
   }
+  // ---- HARD clear reward: festival album frame ----
+  // Once every HARD stage is cleared, this cosmetic frame is applied to
+  // every saved album work across EASY, NORMAL and HARD. The original
+  // screenshots stay untouched; the frame is layered in the album UI.
+  const ALBUM_FRAME_REWARD_STORAGE_KEY = 'kok_album_frame_rewards_v1';
+  const HARD_ALBUM_FRAME_SRC = 'images/album_frame_hard.png';
+  function loadAlbumFrameRewards(){
+    try{
+      const raw = localStorage.getItem(ALBUM_FRAME_REWARD_STORAGE_KEY);
+      return raw ? Object.assign({ festival:false }, JSON.parse(raw)) : { festival:false };
+    }catch(e){ return { festival:false }; }
+  }
+  let albumFrameRewards = loadAlbumFrameRewards();
+  function saveAlbumFrameRewards(){
+    try{ localStorage.setItem(ALBUM_FRAME_REWARD_STORAGE_KEY, JSON.stringify(albumFrameRewards)); }catch(e){}
+  }
+  function syncAlbumFrameRewardFromProgress(){
+    if(hasClearedAllStages('hard') && !albumFrameRewards.festival){
+      albumFrameRewards.festival = true;
+      saveAlbumFrameRewards();
+      return true;
+    }
+    return false;
+  }
+  function hasFestivalAlbumFrame(){ return !!albumFrameRewards.festival; }
+  function albumPhotoMarkup(rec, stage, detail){
+    const noPhoto = detail
+      ? `<div class="albumPhotoBase albumNoPhotoBig" style="background:rgba(${stage.fill},0.35)">写真は保存容量の都合で<br>今回は残せませんでした</div>`
+      : `<span class="albumPhotoBase albumNoPhoto" style="background:rgba(${stage.fill},0.35)">記録のみ</span>`;
+    const base = rec.image
+      ? `<img class="albumPhotoBase" src="${rec.image}" alt="${rec.name || stage.name}">`
+      : noPhoto;
+    const framed = hasFestivalAlbumFrame();
+    return `<div class="albumPhotoWrap${detail ? ' detail' : ''}${framed ? ' hardFrameEquipped' : ''}">` +
+      base +
+      (framed ? `<img class="hardAlbumFrame" src="${HARD_ALBUM_FRAME_SRC}" alt="" aria-hidden="true">` : '') +
+      `</div>`;
+  }
+  function showHardAlbumFrameRewardToast(){
+    const t = document.createElement('div');
+    t.className = 'kokToast kokRecordToast hardFrameRewardToast';
+    t.innerHTML = '<div class="recordTitle">HARD COMPLETE</div>' +
+      '<div style="font-size:30px;line-height:1.2;margin:7px 0;color:#ffcf70;text-shadow:0 0 16px rgba(255,150,40,.8)">▣</div>' +
+      '<div class="recordTime" style="font-size:17px">夜祭りの豪華額を獲得</div>' +
+      '<div class="recordSub">アルバムの全作品に装着しました</div>';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 500); }, 4700);
+  }
+
   function drawTipMarker(x, y, radius, color){
     ctx.save();
     ctx.fillStyle = color;
@@ -503,6 +553,7 @@
   function saveToAlbum(){
     const stage = STAGES[currentStageIndex];
     const hadStarTipBeforeSave = tipRewards.star;
+    const hadHardFrameBeforeSave = hasFestivalAlbumFrame();
     const noBreak = sessionFailCount === 0;
     const oneStroke = strokeReleaseCount <= 1;
     const isPerfect = elapsed <= perfectTimeThreshold(stage);
@@ -542,6 +593,9 @@
       writeAlbumWithFallback(gameMode, album, stage.key);
       if(gameMode === 'normal' && syncTipRewardsFromProgress() && !hadStarTipBeforeSave){
         setTimeout(showStarTipRewardToast, 500);
+      }
+      if(gameMode === 'hard' && syncAlbumFrameRewardFromProgress() && !hadHardFrameBeforeSave){
+        setTimeout(showHardAlbumFrameRewardToast, 650);
       }
     }catch(e){
       showDebugToast('album save failed: ' + (e && e.message ? e.message : e));
@@ -675,9 +729,7 @@
       const card = document.createElement('button');
       card.className = 'albumCard' + (rec ? '' : ' locked');
       if(rec){
-        const photo = rec.image
-          ? `<img src="${rec.image}" alt="${s.name}">`
-          : `<span class="albumNoPhoto" style="background:rgba(${s.fill},0.35)">記録のみ</span>`;
+        const photo = albumPhotoMarkup(rec, s, false);
         card.innerHTML = `${photo}
           <span class="albumCardName">${s.name}</span>
           <span class="albumCardGrade ${rec.gradeCls}">${rec.grade}</span>`;
@@ -695,9 +747,7 @@
     const d = new Date(rec.date);
     const dateStr = d.getFullYear() + '/' + (d.getMonth()+1) + '/' + d.getDate() + ' ' +
       String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-    const photo = rec.image
-      ? `<img class="albumDetailImg" src="${rec.image}" alt="${rec.name}">`
-      : `<div class="albumDetailImg albumNoPhotoBig" style="background:rgba(${stage.fill},0.35)">写真は保存容量の都合で<br>今回は残せませんでした</div>`;
+    const photo = albumPhotoMarkup(rec, stage, true);
     albumDetail.innerHTML = `
       <button class="albumCloseBtn albumDetailClose" id="albumDetailClose">閉じる</button>
       ${photo}
@@ -998,7 +1048,32 @@
         background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
         border-radius:16px; padding:8px; text-align:center;
       }
-      .albumCard img{ width:100%; aspect-ratio:1/1; object-fit:cover; border-radius:10px; }
+      .albumPhotoWrap{
+        position:relative; width:100%; aspect-ratio:1/1; flex:none;
+        display:flex; align-items:center; justify-content:center;
+      }
+      .albumPhotoWrap .albumPhotoBase{
+        position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+        border-radius:10px;
+      }
+      .albumPhotoWrap.hardFrameEquipped .albumPhotoBase{
+        left:23.1%; top:22.8%; width:53.8%; height:53.8%;
+        border-radius:7%;
+      }
+      .hardAlbumFrame{
+        position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+        pointer-events:none; z-index:2;
+        filter:drop-shadow(0 4px 7px rgba(0,0,0,.42));
+      }
+      .albumPhotoWrap.detail{
+        width:min(88vw,390px); margin:4px auto 14px;
+      }
+      .albumPhotoWrap.detail:not(.hardFrameEquipped){ width:min(78vw,340px); }
+      .albumPhotoWrap.detail .albumPhotoBase{ border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
+      .albumPhotoWrap.detail.hardFrameEquipped .albumPhotoBase{
+        left:23.1%; top:22.8%; width:53.8%; height:53.8%;
+        border-radius:7%; box-shadow:none;
+      }
       .albumNoPhoto{
         display:flex; align-items:center; justify-content:center;
         width:100%; aspect-ratio:1/1; border-radius:10px;
@@ -1033,6 +1108,7 @@
 
       #albumDetail{ padding:24px; }
       .albumDetailImg{ width:min(78vw,340px); aspect-ratio:1/1; object-fit:cover; border-radius:18px; margin-bottom:14px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
+      .hardFrameRewardToast{ border-color:rgba(255,155,55,.85); box-shadow:0 0 38px rgba(255,95,20,.3); }
       .albumDetailInfo{ text-align:center; }
       .albumDetailName{ font-family:'Yuji Syuku',serif; font-size:22px; margin-bottom:6px; }
       .albumDetailStars{ font-size:14px; letter-spacing:2px; color:var(--lantern-dim,#ffb066); margin:6px 0; }
@@ -3113,11 +3189,13 @@
   // Backfill the reward for players who had already completed NORMAL
   // before this build was installed. It equips silently on first load.
   syncTipRewardsFromProgress();
+  // Backfill the HARD reward for existing full-HARD clear data.
+  syncAlbumFrameRewardFromProgress();
 
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 69 — NORMAL REWARD: STAR TIP';
+  const BUILD_TAG = 'BUILD 70 — HARD REWARD: FESTIVAL ALBUM FRAME';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
