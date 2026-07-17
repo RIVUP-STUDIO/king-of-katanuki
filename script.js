@@ -227,6 +227,78 @@
     });
   }
 
+  // ---- needle-tip rewards ----
+  // The hit test always remains a single center point. Skins change only
+  // the visible marker, so rewards never alter difficulty or fairness.
+  const TIP_SKIN_STORAGE_KEY = 'kok_tip_skin_v1';
+  const TIP_REWARD_STORAGE_KEY = 'kok_tip_rewards_v1';
+  function loadTipRewards(){
+    try{
+      const raw = localStorage.getItem(TIP_REWARD_STORAGE_KEY);
+      return raw ? Object.assign({ star:false }, JSON.parse(raw)) : { star:false };
+    }catch(e){ return { star:false }; }
+  }
+  let tipRewards = loadTipRewards();
+  let selectedTipSkin = 'circle';
+  try{
+    const savedTip = localStorage.getItem(TIP_SKIN_STORAGE_KEY);
+    if(savedTip === 'star' && tipRewards.star) selectedTipSkin = 'star';
+  }catch(e){}
+  function saveTipRewardState(){
+    try{
+      localStorage.setItem(TIP_REWARD_STORAGE_KEY, JSON.stringify(tipRewards));
+      localStorage.setItem(TIP_SKIN_STORAGE_KEY, selectedTipSkin);
+    }catch(e){}
+  }
+  function syncTipRewardsFromProgress(){
+    if(hasClearedAllStages('normal') && !tipRewards.star){
+      tipRewards.star = true;
+      selectedTipSkin = 'star';
+      saveTipRewardState();
+      return true;
+    }
+    return false;
+  }
+  function showStarTipRewardToast(){
+    const t = document.createElement('div');
+    t.className = 'kokToast kokRecordToast';
+    t.innerHTML = '<div class="recordTitle">NORMAL COMPLETE</div>' +
+      '<div style="font-size:34px;line-height:1.2;margin:6px 0;color:#ffd23f;text-shadow:0 0 14px rgba(255,210,63,.75)">★</div>' +
+      '<div class="recordTime" style="font-size:17px">星の針先を獲得</div>' +
+      '<div class="recordSub">自動で装備しました</div>';
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 500); }, 4300);
+  }
+  function drawTipMarker(x, y, radius, color){
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 16;
+    if(selectedTipSkin === 'star' && tipRewards.star){
+      const outer = radius * 1.35;
+      const inner = outer * 0.46;
+      ctx.beginPath();
+      for(let i = 0; i < 10; i++){
+        const a = -Math.PI/2 + i * Math.PI/5;
+        const r = i % 2 === 0 ? outer : inner;
+        const px = x + Math.cos(a) * r;
+        const py = y + Math.sin(a) * r;
+        if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, radius * 0.16);
+      ctx.strokeStyle = 'rgba(255,255,255,.72)';
+      ctx.stroke();
+    }else{
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // ---- プレイヤープロフィール: level, XP, titles, lifetime stats.
   // Separate localStorage key — existing clear/album/mode data is untouched.
   const PROFILE_STORAGE_KEY = 'kok_profile_v1';
@@ -430,6 +502,7 @@
 
   function saveToAlbum(){
     const stage = STAGES[currentStageIndex];
+    const hadStarTipBeforeSave = tipRewards.star;
     const noBreak = sessionFailCount === 0;
     const oneStroke = strokeReleaseCount <= 1;
     const isPerfect = elapsed <= perfectTimeThreshold(stage);
@@ -467,6 +540,9 @@
       };
       album[stage.key] = record;
       writeAlbumWithFallback(gameMode, album, stage.key);
+      if(gameMode === 'normal' && syncTipRewardsFromProgress() && !hadStarTipBeforeSave){
+        setTimeout(showStarTipRewardToast, 500);
+      }
     }catch(e){
       showDebugToast('album save failed: ' + (e && e.message ? e.message : e));
       return;
@@ -2747,14 +2823,8 @@
       ctx.fillStyle = 'rgba(216,185,120,0.55)';
       ctx.fill();
 
-      // glowing tip (this is the point being judged)
-      ctx.beginPath();
-      ctx.arc(needle.x, needle.y, W*0.015, 0, Math.PI*2);
-      ctx.fillStyle = col;
-      ctx.shadowColor = col;
-      ctx.shadowBlur = 16;
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      // glowing tip skin (the actual judgment remains the center point)
+      drawTipMarker(needle.x, needle.y, W*0.015, col);
     }
 
     // a few sugar crumbs falling away at the moment of detachment
@@ -3040,10 +3110,14 @@
     Object.keys(album).forEach(key => setPlayerRankingEntry(key, m, album[key].time));
   });
 
+  // Backfill the reward for players who had already completed NORMAL
+  // before this build was installed. It equips silently on first load.
+  syncTipRewardsFromProgress();
+
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 67 — EASY BRUSH 4 + REMAINING HELP LOUPE';
+  const BUILD_TAG = 'BUILD 69 — NORMAL REWARD: STAR TIP';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
