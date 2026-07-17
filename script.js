@@ -20,6 +20,17 @@
   remainingEl.style.cssText = 'font-size:11px; font-weight:700; color:#ffd23f; text-align:right; ' +
     'margin-top:2px; letter-spacing:0.5px; min-height:14px;';
   document.getElementById('progressWrap').insertAdjacentElement('afterend', remainingEl);
+
+  const carveHelpBtn = document.createElement('button');
+  carveHelpBtn.id = 'carveHelpBtn';
+  carveHelpBtn.type = 'button';
+  carveHelpBtn.textContent = '🔍 残りを探す';
+  carveHelpBtn.style.cssText = 'display:none;margin:6px 0 0 auto;padding:6px 10px;border-radius:999px;' +
+    'border:1px solid rgba(255,210,90,.55);background:rgba(25,16,12,.78);color:#ffe39a;' +
+    'font-size:11px;font-weight:900;letter-spacing:.4px;';
+  remainingEl.insertAdjacentElement('afterend', carveHelpBtn);
+  carveHelpBtn.addEventListener('click', showRemainingHelp);
+
   function updateProgress(){
     const pct = (erodedCount / N_BUCKETS) * 100;
     progressBar.style.width = pct.toFixed(1) + '%';
@@ -1464,6 +1475,9 @@
   let strokeReleaseCount = 0;
   let strokeHasCarved = false;
   let failCracks = [];
+  let lastEasyBucket = null;
+  let remainingHelpEl = null;
+  let remainingHelpTimer = null;
 
   function inputSampleStep(){
     return Math.max(1.5, Math.min(3, safeBand * 0.34));
@@ -1607,6 +1621,10 @@
     strokeReleaseCount = 0;
     strokeHasCarved = false;
     failCracks = [];
+    lastEasyBucket = null;
+    if(remainingHelpTimer){ clearTimeout(remainingHelpTimer); remainingHelpTimer = null; }
+    if(remainingHelpEl) remainingHelpEl.style.display = 'none';
+    carveHelpBtn.style.display = 'none';
     startTime = null;
     elapsed = 0;
     failPoint = null;
@@ -1669,6 +1687,7 @@
     showScreen(null);
     hud.classList.remove('hidden');
     legend.classList.remove('hidden');
+    carveHelpBtn.style.display = 'block';
     navBar.classList.add('hidden');
     loop();
   }
@@ -1677,10 +1696,101 @@
     mode = 'title';
     hud.classList.add('hidden');
     legend.classList.add('hidden');
+    carveHelpBtn.style.display = 'none';
     navBar.classList.remove('hidden');
     setNavActive('play');
     renderStageList();
     showScreen(titleScreen);
+  }
+
+  function findRemainingBucket(){
+    if(erodedCount >= N_BUCKETS) return -1;
+    // Prefer the center of the longest unfinished cluster, because that is
+    // usually the gap the player is actually struggling to see.
+    let bestStart = -1, bestLen = 0;
+    let runStart = -1, runLen = 0;
+    for(let k = 0; k < N_BUCKETS * 2; k++){
+      const i = k % N_BUCKETS;
+      const unfinished = !fullyEroded[i] && erosion[i] < EROSION_DONE;
+      if(unfinished){
+        if(runLen === 0) runStart = k;
+        runLen++;
+        if(runLen > bestLen && runLen <= N_BUCKETS){
+          bestLen = runLen;
+          bestStart = runStart;
+        }
+      }else{
+        runLen = 0;
+      }
+      if(k >= N_BUCKETS && runLen === 0) break;
+    }
+    if(bestStart < 0) return -1;
+    return (bestStart + Math.floor(bestLen / 2)) % N_BUCKETS;
+  }
+
+  function showRemainingHelp(){
+    if(mode !== 'playing') return;
+    const bucket = findRemainingBucket();
+    if(bucket < 0){
+      remainingEl.textContent = '削り残しはありません';
+      return;
+    }
+
+    if(!remainingHelpEl){
+      remainingHelpEl = document.createElement('div');
+      remainingHelpEl.id = 'remainingHelpLoupe';
+      remainingHelpEl.style.cssText = 'position:fixed;left:50%;top:13%;transform:translateX(-50%);z-index:75;' +
+        'display:none;flex-direction:column;align-items:center;gap:7px;pointer-events:none;';
+      remainingHelpEl.innerHTML =
+        '<div style="width:min(48vw,190px);aspect-ratio:1/1;border-radius:50%;padding:5px;' +
+        'background:linear-gradient(145deg,#fff2bf,#b77927);box-shadow:0 12px 30px rgba(0,0,0,.5),0 0 22px rgba(255,205,70,.3);">' +
+        '<canvas class="remainingHelpCanvas" style="display:block;width:100%;height:100%;border-radius:50%;background:#171016;"></canvas></div>' +
+        '<div style="padding:6px 12px;border-radius:999px;background:rgba(12,9,14,.88);border:1px solid rgba(255,210,70,.5);' +
+        'color:#ffe48f;font-size:12px;font-weight:900;">このあたりが残っています</div>';
+      document.body.appendChild(remainingHelpEl);
+    }
+
+    const loupe = remainingHelpEl.querySelector('.remainingHelpCanvas');
+    const cssSize = 190;
+    const dpr = window.devicePixelRatio || 1;
+    loupe.width = cssSize * dpr;
+    loupe.height = cssSize * dpr;
+    const lctx = loupe.getContext('2d');
+    lctx.setTransform(dpr,0,0,dpr,0,0);
+    lctx.clearRect(0,0,cssSize,cssSize);
+
+    const focus = shapePts[bucket];
+    const cropLogical = W * 0.22;
+    const sx = Math.max(0, Math.min(W - cropLogical, focus.x - cropLogical/2));
+    const sy = Math.max(0, Math.min(H - cropLogical, focus.y - cropLogical/2));
+    const sourceDpr = canvas.width / W;
+    lctx.drawImage(canvas,
+      sx * sourceDpr, sy * sourceDpr, cropLogical * sourceDpr, cropLogical * sourceDpr,
+      0, 0, cssSize, cssSize);
+
+    // Highlight the unfinished edge itself, not a generic crosshair.
+    const prev = shapePts[(bucket - 3 + N_BUCKETS) % N_BUCKETS];
+    const next = shapePts[(bucket + 3) % N_BUCKETS];
+    const mapX = x => (x - sx) / cropLogical * cssSize;
+    const mapY = y => (y - sy) / cropLogical * cssSize;
+    lctx.save();
+    lctx.lineCap = 'round';
+    lctx.lineWidth = 7;
+    lctx.strokeStyle = 'rgba(255,210,63,.98)';
+    lctx.shadowColor = 'rgba(255,210,63,1)';
+    lctx.shadowBlur = 12;
+    lctx.beginPath();
+    lctx.moveTo(mapX(prev.x), mapY(prev.y));
+    lctx.quadraticCurveTo(mapX(focus.x), mapY(focus.y), mapX(next.x), mapY(next.y));
+    lctx.stroke();
+    lctx.restore();
+
+    remainingHelpEl.style.display = 'flex';
+    if(remainingHelpTimer) clearTimeout(remainingHelpTimer);
+    remainingHelpTimer = setTimeout(() => {
+      if(remainingHelpEl) remainingHelpEl.style.display = 'none';
+      remainingHelpTimer = null;
+    }, 2800);
   }
 
   function captureFailSnapshot(){
@@ -1784,6 +1894,7 @@
     setTimeout(() => {
       hud.classList.add('hidden');
       legend.classList.add('hidden');
+      carveHelpBtn.style.display = 'none';
       showScreen(gameoverScreen);
       renderFailMagnifier();
     }, 650);
@@ -1803,6 +1914,7 @@
     liftTiltSign = Math.random() < 0.5 ? -1 : 1;
     hud.classList.add('hidden');
     legend.classList.add('hidden');
+    carveHelpBtn.style.display = 'none';
     setTimeout(() => {
       mode = 'clear';
       clearTimeEl.textContent = elapsed.toFixed(2) + 's';
@@ -1981,10 +2093,20 @@
 
     const now = performance.now();
     let scraped = false;
-    // BUILD 60: EASY clears a wider five-bucket trail. The player should
-    // be able to follow the outline once without doing fussy cleanup passes.
-    // Judgment remains based on the needle tip, but completion is generous.
-    for(let i = -2; i <= 2; i++){
+    // BUILD 66: EASY uses a four-bucket moving brush. NORMAL still clears
+    // three buckets, while EASY keeps one extra bucket on the direction of
+    // travel. This narrows the old five-bucket sweep without collapsing the
+    // two modes into the same difficulty.
+    let moveDir = 1;
+    if(lastEasyBucket !== null){
+      let delta = bucket - lastEasyBucket;
+      if(delta > N_BUCKETS/2) delta -= N_BUCKETS;
+      if(delta < -N_BUCKETS/2) delta += N_BUCKETS;
+      if(delta < 0) moveDir = -1;
+    }
+    lastEasyBucket = bucket;
+    const easyOffsets = moveDir > 0 ? [-1,0,1,2] : [-2,-1,0,1];
+    for(const i of easyOffsets){
       const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
       if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
       lastErodeAt[b] = now;
@@ -2914,7 +3036,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 65 — FIRST PLAY: four-step tutorial';
+  const BUILD_TAG = 'BUILD 66 — EASY BRUSH 4 + REMAINING HELP LOUPE';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
