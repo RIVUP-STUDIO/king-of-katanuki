@@ -2029,6 +2029,10 @@
     profile.totalFails++;
     saveProfile();
     failPoint = {x, y};
+    // Paint the final red failure state once before taking the review image.
+    // Without this, the loupe can capture the previous yellow frame even
+    // though the actual judged state has already become red.
+    draw();
     failSnapshot = captureFailSnapshot();
     const fdx = x - cx, fdy = y - cy;
     const fdist = Math.hypot(fdx, fdy);
@@ -2289,9 +2293,10 @@
     }
   }
 
-  // ノーマルモード: the same gentle line-tracing feel as Easy, but the safe
-  // line sits exactly on the mold's outer edge — any dip inside is instant
-  // out, no shallow-warning buffer. Outside stays exactly as forgiving.
+  // ノーマルモード: outside tracing stays precise, while a very shallow
+  // inside touch becomes a yellow warning instead of an immediate failure.
+  // This is especially important on sharp outlines such as the pinwheel,
+  // where a one-degree bucket change can otherwise feel harsher than it looks.
   function handleMoveNormal(rawTip){
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
@@ -2301,12 +2306,23 @@
     const targetR = targetRCache[bucket];
     const rawDiff = dist0 - targetR;
 
-    // Judge the real, unassisted tip first. Magnetism must never rescue
-    // a genuine inside breach.
-    if(rawDiff < 0){
+    // Yellow must never mean GAME OVER. A shallow inward touch is warning
+    // only; a deeper breach turns red and fails. The pinwheel gets a little
+    // extra room because its sharp radial jumps are visually deceptive.
+    const isPinwheel = STAGES[currentStageIndex].key === 'kazaguruma';
+    const innerFail = safeBand * (isPinwheel ? 0.62 : 0.42);
+    if(rawDiff < -innerFail){
       needle = rawTip;
       if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
       gameOver(rawTip.x, rawTip.y);
+      return;
+    }
+    if(rawDiff < 0){
+      needle = rawTip;
+      if(currentState !== 'yellow'){
+        currentState = 'yellow';
+        vibrate(5);
+      }
       return;
     }
 
@@ -3195,7 +3211,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 70 — HARD REWARD: FESTIVAL ALBUM FRAME';
+  const BUILD_TAG = 'BUILD 71 — NORMAL FAIR WARNING: YELLOW NEVER FAILS';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
