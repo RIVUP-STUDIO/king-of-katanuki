@@ -184,27 +184,33 @@
   }
 
 
-  // ---- stage unlock progression (BUILD 59) ----
-  // EASY starts with stages 1-5 open. From stage 6 onward, each stage opens
-  // after the previous EASY stage is cleared. NORMAL and HARD open per stage
-  // once that same stage has been cleared on EASY.
+  // ---- stage unlock progression (BUILD 67) ----
+  // EASY keeps its current route: stages 1-5 start open, then stages 6-10
+  // unlock one by one. Clearing all 10 EASY stages opens every NORMAL stage.
+  // Clearing all 10 NORMAL stages then opens every HARD stage.
   const EASY_INITIAL_UNLOCK_COUNT = 5; // 日の丸〜提灯
+  function hasClearedAllStages(modeKey){
+    const album = loadAlbum(modeKey);
+    return STAGES.every(stage => !!album[stage.key]);
+  }
   function isStageUnlocked(stageIndex, modeKey){
     const m = modeKey || gameMode;
     if(stageIndex < 0 || stageIndex >= STAGES.length) return false;
-    const easyAlbum = loadAlbum('easy');
     if(m === 'easy'){
       if(stageIndex < EASY_INITIAL_UNLOCK_COUNT) return true;
+      const easyAlbum = loadAlbum('easy');
       const prev = STAGES[stageIndex - 1];
       return !!(prev && easyAlbum[prev.key]);
     }
-    const stage = STAGES[stageIndex];
-    return !!(stage && easyAlbum[stage.key]);
+    if(m === 'normal') return hasClearedAllStages('easy');
+    if(m === 'hard') return hasClearedAllStages('normal');
+    return false;
   }
   function unlockMessage(stageIndex, modeKey){
     const m = modeKey || gameMode;
     if(m === 'easy') return '前のEASYステージをクリアで解放';
-    return 'このステージのEASYクリアで解放';
+    if(m === 'normal') return 'EASY全10ステージクリアで解放';
+    return 'NORMAL全10ステージクリアで解放';
   }
   function findNextUnlockedStageIndex(fromIndex, modeKey){
     for(let step = 1; step <= STAGES.length; step++){
@@ -3036,7 +3042,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 66 — EASY BRUSH 4 + REMAINING HELP LOUPE';
+  const BUILD_TAG = 'BUILD 67 — EASY BRUSH 4 + REMAINING HELP LOUPE';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
