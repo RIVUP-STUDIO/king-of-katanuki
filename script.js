@@ -251,14 +251,19 @@
   // unlock one by one. Clearing all 10 EASY stages opens every NORMAL stage.
   // Clearing all 10 NORMAL stages then opens every HARD stage.
   const EASY_INITIAL_UNLOCK_COUNT = 5; // 日の丸〜提灯
+  function regularStages(){ return STAGES.filter(stage => !stage.secret); }
   function hasClearedAllStages(modeKey){
     const album = loadAlbum(modeKey);
-    return STAGES.every(stage => !!album[stage.key]);
+    return regularStages().every(stage => !!album[stage.key]);
   }
   function isStageUnlocked(stageIndex, modeKey){
     const m = modeKey || gameMode;
     if(devSettings.unlockAll) return stageIndex >= 0 && stageIndex < STAGES.length;
     if(stageIndex < 0 || stageIndex >= STAGES.length) return false;
+    const stage = STAGES[stageIndex];
+    if(stage && stage.secret){
+      return m === 'hard' && allModesAllStagesCleared();
+    }
     if(m === 'easy'){
       if(stageIndex < EASY_INITIAL_UNLOCK_COUNT) return true;
       const easyAlbum = loadAlbum('easy');
@@ -271,6 +276,8 @@
   }
   function unlockMessage(stageIndex, modeKey){
     const m = modeKey || gameMode;
+    const stage = STAGES[stageIndex];
+    if(stage && stage.secret) return '全30ステージ制覇で解放';
     if(m === 'easy') return '前のEASYステージをクリアで解放';
     if(m === 'normal') return 'EASY全10ステージクリアで解放';
     return 'NORMAL全10ステージクリアで解放';
@@ -285,7 +292,7 @@
   function allModesAllStagesCleared(){
     return ['easy','normal','hard'].every(m => {
       const album = loadAlbum(m);
-      return STAGES.every(s => !!album[s.key]);
+      return regularStages().every(s => !!album[s.key]);
     });
   }
 
@@ -787,6 +794,7 @@
     const album = loadAlbum(albumViewMode);
     albumGrid.innerHTML = '';
     STAGES.forEach(s => {
+      if(s.secret && albumViewMode !== 'hard') return;
       const rec = album[s.key];
       const card = document.createElement('button');
       card.className = 'albumCard' + (rec ? '' : ' locked');
@@ -1389,6 +1397,17 @@
          "snaps back". 100dvh tracks the real visible viewport instead. */
       #stage{ height: 100dvh !important; }
       html, body{ height: 100dvh !important; }
+
+      .stageBtn.secretStageBtn{
+        border-color:rgba(255,178,55,.88) !important;
+        background:linear-gradient(155deg,rgba(82,34,10,.95),rgba(17,9,13,.96)) !important;
+        box-shadow:0 0 22px rgba(255,115,20,.2), inset 0 1px 0 rgba(255,235,180,.08);
+      }
+      .stageBtn.secretStageBtn .num{
+        background:linear-gradient(180deg,#fff0a8,#ff7a18) !important;
+        box-shadow:0 0 12px rgba(255,135,30,.8);
+      }
+      .stageBtn.secretStageBtn .stageName{ color:#ffd38a; }
       .stageListCredit{
         text-align:center; font-size:11px; letter-spacing:2px;
         color:rgba(251,243,223,0.4); margin-top:14px; padding-bottom:10px;
@@ -1397,6 +1416,21 @@
     `;
     document.head.appendChild(style);
   })();
+
+
+  // ---- SECRET STAGE: 龍 ----
+  // The current carving engine judges one radial boundary per degree.
+  // This 360-point version preserves the approved dragon's readable head,
+  // curved body and tail while keeping the trace continuous and playable.
+  const DRAGON_SHAPE_RATIOS = [1.0153,1.0222,1.0334,1.0488,1.0680,1.0907,1.1095,1.1242,1.1347,1.1408,1.1426,1.1432,1.1427,1.1408,1.1374,1.1323,1.1255,1.1172,1.1081,1.0993,1.0921,1.0877,1.0868,1.0892,1.0943,1.1014,1.1095,1.1178,1.1262,1.1345,1.1426,1.1504,1.1580,1.1653,1.1722,1.1787,1.1848,1.1905,1.1957,1.2005,1.2050,1.2091,1.2128,1.2161,1.2189,1.2213,1.2234,1.2250,1.2264,1.2273,1.2279,1.2281,1.2280,1.2276,1.2269,1.2259,1.2247,1.2233,1.2216,1.2197,1.2174,1.2149,1.2121,1.2091,1.2059,1.2024,1.1987,1.1949,1.1907,1.1863,1.1817,1.1766,1.1711,1.1652,1.1588,1.1518,1.1442,1.1361,1.1274,1.1181,1.1081,1.0975,1.0860,1.0731,1.0595,1.0458,1.0327,1.0215,1.0133,1.0080,1.0050,1.0036,1.0029,1.0021,1.0005,0.9980,0.9944,0.9897,0.9841,0.9777,0.9711,0.9649,0.9597,0.9570,0.9580,0.9652,0.9780,0.9953,1.0141,1.0302,1.0372,1.0354,1.0269,1.0147,1.0035,0.9978,0.9912,0.9813,0.9553,0.9120,0.8519,0.7865,0.7171,0.6653,0.6309,0.6125,0.6048,0.6075,0.6102,0.6127,0.6152,0.6175,0.6200,0.6223,0.6247,0.6270,0.6292,0.6313,0.6333,0.6353,0.6372,0.6392,0.6413,0.6434,0.6464,0.6510,0.6579,0.6675,0.6801,0.6939,0.7078,0.7264,0.7492,0.7753,0.8053,0.8393,0.8654,0.8865,0.9030,0.9152,0.9233,0.9336,0.9404,0.9428,0.9402,0.9321,0.9204,0.9090,0.8990,0.8914,0.8860,0.8725,0.8498,0.8181,0.7780,0.7314,0.6942,0.6668,0.6486,0.6390,0.6366,0.6342,0.6318,0.6293,0.6267,0.6240,0.6212,0.6184,0.6154,0.6124,0.6093,0.6060,0.6025,0.5991,0.5955,0.5918,0.5881,0.5844,0.5807,0.5769,0.5731,0.5694,0.5656,0.5618,0.5580,0.5542,0.5689,0.6033,0.6611,0.7435,0.8515,0.9489,1.0334,1.0984,1.1414,1.1599,1.1708,1.1725,1.1678,1.1578,1.1438,1.1277,1.1134,1.1019,1.0934,1.0883,1.0865,1.0873,1.0910,1.0977,1.1073,1.1188,1.1304,1.1407,1.1488,1.1544,1.1576,1.1592,1.1600,1.1609,1.1629,1.1667,1.1730,1.1814,1.1919,1.2038,1.2166,1.2297,1.2433,1.2567,1.2698,1.2818,1.2870,1.2856,1.2776,1.2637,1.2450,1.2327,1.2268,1.2273,1.2342,1.2468,1.2596,1.2726,1.2856,1.2983,1.3103,1.3215,1.3313,1.3392,1.3365,1.3234,1.2997,1.2602,1.2062,1.1549,1.1064,1.0613,1.0306,1.0139,1.0023,0.9960,0.9944,0.9917,0.9830,0.9685,0.9482,0.9226,0.8920,0.8667,0.8466,0.8317,0.8217,0.8162,0.8101,0.8031,0.7952,0.7861,0.7756,0.7572,0.7308,0.6965,0.6544,0.6045,0.5614,0.5263,0.5005,0.4855,0.4837,0.4871,0.4948,0.5055,0.5180,0.5305,0.5429,0.5554,0.5679,0.5803,0.5928,0.6053,0.6177,0.6302,0.6427,0.6551,0.6676,0.6801,0.6925,0.7050,0.7175,0.7299,0.7424,0.7549,0.7673,0.7798,0.7923,0.8047,0.8172,0.8297,0.8421,0.8546,0.8671,0.8795,0.8920,0.9045,0.9169,0.9294,0.9419,0.9543,0.9668,0.9793,0.9910,1.0012,1.0092,1.0144,1.0164,1.0162,1.0148,1.0133,1.0125,1.0132];
+  function dragonRadius(theta, Rb){
+    const deg = ((theta * 180 / Math.PI) + 360) % 360;
+    const i0 = Math.floor(deg) % 360;
+    const i1 = (i0 + 1) % 360;
+    const t = deg - Math.floor(deg);
+    return Rb * (DRAGON_SHAPE_RATIOS[i0] +
+      (DRAGON_SHAPE_RATIOS[i1] - DRAGON_SHAPE_RATIOS[i0]) * t);
+  }
 
   // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
@@ -1409,7 +1443,8 @@
     { name:'うちわ',   key:'uchiwa',     shapeFn:uchiwaRadius,     fill:'255,150,90', difficulty:3 },
     { name:'りんご飴', key:'ringoame',   shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
     { name:'風ぐるま', key:'kazaguruma', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:4 },
-    { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:5 }
+    { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:5 },
+    { name:'龍',       key:'dragon',     shapeFn:dragonRadius,     fill:'255,165,45', difficulty:5, secret:true }
   ];
 
   // ---- clear-scene image assets ----
@@ -1567,19 +1602,21 @@
     stageList.innerHTML = '';
     const album = loadAlbum(gameMode);
     STAGES.forEach((s, i) => {
+      if(s.secret && gameMode !== 'hard') return;
       const unlocked = isStageUnlocked(i, gameMode);
       const rec = album[s.key];
       const btn = document.createElement('button');
-      btn.className = 'stageBtn' + (rec ? ' isCleared' : '') + (unlocked ? '' : ' isLocked');
+      btn.className = 'stageBtn' + (s.secret ? ' secretStageBtn' : '') +
+        (rec ? ' isCleared' : '') + (unlocked ? '' : ' isLocked');
       btn.disabled = !unlocked;
       const stars = '★'.repeat(s.difficulty) + '☆'.repeat(5 - s.difficulty);
       const bestTime = rec ? rec.time.toFixed(2) + 's' : '--';
       const lockLine = unlocked ? '' : '<span class="stageLockText">' + unlockMessage(i, gameMode) + '</span>';
       btn.innerHTML =
-        '<span class="num">' + (i+1) + '</span>' +
+        '<span class="num">' + (s.secret ? 'S' : (i+1)) + '</span>' +
         '<canvas class="thumb"></canvas>' +
         '<span class="stageInfo">' +
-          '<span class="stageName">' + s.name + '</span>' +
+          '<span class="stageName">' + (s.secret ? 'SECRET：' : '') + s.name + '</span>' +
           '<span class="stageStars">' + stars + '</span>' +
           '<span class="stageBestTime">BEST ' + bestTime + '</span>' +
           lockLine +
@@ -2712,6 +2749,7 @@
 
     const now = performance.now();
     const isShattering = mode === 'gameover' && shards.length > 0;
+    const isDragonSecret = STAGES[currentStageIndex] && STAGES[currentStageIndex].secret;
 
     // ---- clear "detach" timeline ----
     let liftProgress = 0; // 0..1 across the lift phase only (pause phase = 0)
@@ -2763,7 +2801,12 @@
     ctx.scale(zoomScale, zoomScale);
     ctx.translate(-cx, -cy);
 
-    if(celebT > 0){
+    const secretRevealT = clearPhaseStart !== null
+      ? Math.min(1, Math.max(0, (now - clearPhaseStart) / (CLEAR_PAUSE_MS + CLEAR_LIFT_MS)))
+      : 0;
+    if(isDragonSecret && clearPhaseStart !== null){
+      drawDragonSecretBackdrop(secretRevealT, celebT, now);
+    } else if(celebT > 0){
       drawFestivalScene(celebT, now);
     } else {
     // surrounding candy: drawn as 360 individual wedges (one per bucket) so
@@ -2934,6 +2977,7 @@
 
       const stageImg = clearImages[STAGES[currentStageIndex].name];
       const useImage = celebT > 0 && stageImg && stageImg.loaded;
+      const secretImageAlpha = isDragonSecret ? Math.min(1, celebT * 1.45) : celebT;
 
       // Stage 0 (日の丸): once cleared, fade in a crisp white flag field
       // behind the red disc so it reads as an actual flag being revealed
@@ -2965,7 +3009,7 @@
       if(useImage){
         ctx.save();
         ctx.clip(shapePath);
-        ctx.globalAlpha = celebT;
+        ctx.globalAlpha = secretImageAlpha;
         const align = clearImageAlign[STAGES[currentStageIndex].name];
         if(align) drawImageAligned(stageImg.img, align);
         else drawImageCover(stageImg.img, cx, cy, R * 2.5);
@@ -2998,8 +3042,8 @@
         ctx.lineJoin = 'round';
         ctx.strokeStyle = 'rgba(255,225,150,0.95)';
         ctx.shadowColor = 'rgba(255,200,110,0.95)';
-        ctx.shadowBlur = W*0.035 * celebT;
-        ctx.lineWidth = W*0.01;
+        ctx.shadowBlur = W*(isDragonSecret ? 0.065 : 0.035) * celebT;
+        ctx.lineWidth = W*(isDragonSecret ? 0.015 : 0.01);
         ctx.stroke(shapePath);
         ctx.shadowBlur = 0;
         ctx.restore();
@@ -3156,6 +3200,89 @@
         ctx.fillRect(0, 0, W, H);
       }
     }
+  }
+
+
+  function drawDragonSecretBackdrop(revealT, celebT, now){
+    ctx.save();
+    const dark = Math.min(1, revealT / 0.28);
+    const bg = ctx.createRadialGradient(cx, cy, R*0.1, cx, cy, plateR*1.55);
+    bg.addColorStop(0, 'rgba(18,8,10,' + dark + ')');
+    bg.addColorStop(0.58, 'rgba(5,4,12,' + dark + ')');
+    bg.addColorStop(1, 'rgba(0,0,4,' + dark + ')');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0,0,W,H);
+
+    // Lanterns ignite one after another before the dragon appears.
+    const lanternBase = Math.max(0, Math.min(1, (revealT - 0.18) / 0.48));
+    const pulse = 0.88 + Math.sin(now/240)*0.12;
+    const lanterns = [
+      {x:cx-W*0.30,y:cy-W*0.17,delay:0},
+      {x:cx+W*0.30,y:cy-W*0.17,delay:0.16},
+      {x:cx-W*0.37,y:cy+W*0.10,delay:0.27},
+      {x:cx+W*0.37,y:cy+W*0.10,delay:0.38}
+    ];
+    lanterns.forEach((l, idx) => {
+      const lit = Math.max(0, Math.min(1, (lanternBase - l.delay) / 0.34));
+      if(lit <= 0) return;
+      const glow = ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,W*0.13);
+      glow.addColorStop(0,'rgba(255,185,70,'+(0.42*lit*pulse)+')');
+      glow.addColorStop(1,'rgba(255,110,20,0)');
+      ctx.fillStyle=glow;
+      ctx.beginPath(); ctx.arc(l.x,l.y,W*0.13,0,Math.PI*2); ctx.fill();
+
+      ctx.save();
+      ctx.translate(l.x,l.y);
+      ctx.globalAlpha=lit;
+      ctx.fillStyle='#ff7a24';
+      ctx.shadowColor='#ffb347';
+      ctx.shadowBlur=W*0.045;
+      ctx.beginPath();
+      ctx.ellipse(0,0,W*0.035,W*0.052,0,0,Math.PI*2);
+      ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle='rgba(255,225,150,.85)';
+      ctx.lineWidth=1.4;
+      for(let k=-1;k<=1;k++){
+        ctx.beginPath();
+        ctx.moveTo(k*W*0.013,-W*0.047);
+        ctx.quadraticCurveTo(k*W*0.022,0,k*W*0.013,W*0.047);
+        ctx.stroke();
+      }
+      ctx.fillStyle='#d79b3a';
+      ctx.fillRect(-W*0.025,-W*0.057,W*0.05,W*0.009);
+      ctx.fillRect(-W*0.025,W*0.048,W*0.05,W*0.009);
+      ctx.beginPath();
+      ctx.moveTo(0,W*0.057); ctx.lineTo(0,W*0.083); ctx.stroke();
+      ctx.restore();
+    });
+
+    // A dim golden halo anticipates the dragon before the illustration fades in.
+    const dragonGlow = Math.max(0, Math.min(1, (revealT - 0.48) / 0.45));
+    if(dragonGlow > 0 && shapePath){
+      ctx.save();
+      ctx.globalAlpha = dragonGlow * (0.55 + 0.2*Math.sin(now/180));
+      ctx.lineWidth = W*0.018;
+      ctx.strokeStyle = 'rgba(255,176,55,.95)';
+      ctx.shadowColor = 'rgba(255,100,20,1)';
+      ctx.shadowBlur = W*0.055;
+      ctx.stroke(shapePath);
+      ctx.restore();
+    }
+
+    if(celebT > 0.15){
+      const titleA = Math.min(1,(celebT-0.15)/0.45);
+      ctx.save();
+      ctx.globalAlpha=titleA;
+      ctx.textAlign='center';
+      ctx.font='900 '+Math.round(W*0.048)+'px serif';
+      ctx.fillStyle='#ffe2a0';
+      ctx.shadowColor='#ff6b1a';
+      ctx.shadowBlur=18;
+      ctx.fillText('SECRET STAGE',cx,cy+plateR*1.24);
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   // A procedural night-festival backdrop: deep gradient sky, a distant torii
@@ -3328,7 +3455,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 77 — EMBEDDED FRAME: no missing asset';
+  const BUILD_TAG = 'BUILD 78 — SECRET DRAGON: lantern awakening';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
