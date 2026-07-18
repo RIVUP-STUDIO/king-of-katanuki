@@ -1418,20 +1418,375 @@
   })();
 
 
+
   // ---- SECRET STAGE: 龍 ----
-  // BUILD 79: the first attempt converted a concave full-body dragon into a
-  // one-radius-per-angle outline, which collapsed into an unreadable blob.
-  // The gameplay engine is radial, so the playable mold is now a purpose-built
-  // star-convex dragon-head crest: long snout, two horns and a flowing mane.
-  const DRAGON_SHAPE_RATIOS = [0.7864,0.7867,0.7882,0.7907,0.7941,0.7983,0.8031,0.8086,0.8146,0.8210,0.8278,0.8350,0.8423,0.8499,0.8577,0.8655,0.8735,0.8815,0.8896,0.8976,0.9056,0.9134,0.9212,0.9289,0.9363,0.9436,0.9507,0.9575,0.9641,0.9705,0.9765,0.9823,0.9878,0.9931,0.9980,1.0027,1.0071,1.0112,1.0151,1.0188,1.0222,1.0254,1.0283,1.0311,1.0337,1.0361,1.0383,1.0404,1.0423,1.0441,1.0457,1.0472,1.0486,1.0497,1.0508,1.0517,1.0525,1.0531,1.0535,1.0538,1.0539,1.0539,1.0537,1.0533,1.0527,1.0520,1.0511,1.0500,1.0487,1.0472,1.0456,1.0439,1.0419,1.0399,1.0376,1.0353,1.0328,1.0302,1.0274,1.0246,1.0216,1.0185,1.0153,1.0120,1.0086,1.0050,1.0013,0.9975,0.9935,0.9893,0.9849,0.9803,0.9755,0.9704,0.9650,0.9593,0.9533,0.9470,0.9405,0.9337,0.9266,0.9194,0.9121,0.9048,0.8976,0.8906,0.8840,0.8778,0.8723,0.8674,0.8635,0.8605,0.8586,0.8578,0.8582,0.8597,0.8623,0.8660,0.8706,0.8760,0.8820,0.8885,0.8953,0.9022,0.9091,0.9158,0.9221,0.9280,0.9335,0.9384,0.9428,0.9468,0.9502,0.9532,0.9557,0.9579,0.9596,0.9608,0.9616,0.9618,0.9613,0.9602,0.9583,0.9558,0.9526,0.9489,0.9449,0.9407,0.9368,0.9335,0.9311,0.9299,0.9304,0.9327,0.9370,0.9435,0.9521,0.9628,0.9753,0.9894,1.0047,1.0208,1.0374,1.0540,1.0703,1.0859,1.1005,1.1139,1.1259,1.1365,1.1456,1.1533,1.1595,1.1643,1.1679,1.1704,1.1718,1.1723,1.1719,1.1707,1.1687,1.1659,1.1624,1.1583,1.1534,1.1477,1.1413,1.1341,1.1260,1.1171,1.1072,1.0964,1.0846,1.0718,1.0579,1.0430,1.0271,1.0103,0.9928,0.9747,0.9563,0.9377,0.9194,0.9015,0.8845,0.8686,0.8542,0.8415,0.8308,0.8223,0.8160,0.8121,0.8103,0.8107,0.8130,0.8169,0.8222,0.8286,0.8357,0.8432,0.8507,0.8580,0.8647,0.8707,0.8758,0.8797,0.8826,0.8843,0.8848,0.8843,0.8830,0.8809,0.8786,0.8763,0.8747,0.8743,0.8758,0.8800,0.8877,0.8995,0.9158,0.9368,0.9622,0.9911,1.0222,1.0535,1.0830,1.1082,1.1270,1.1375,1.1387,1.1302,1.1125,1.0872,1.0563,1.0223,0.9879,0.9556,0.9277,0.9059,0.8911,0.8838,0.8838,0.8903,0.9023,0.9182,0.9363,0.9550,0.9723,0.9867,0.9967,1.0013,0.9998,0.9919,0.9777,0.9578,0.9332,0.9051,0.8749,0.8441,0.8141,0.7863,0.7617,0.7413,0.7258,0.7156,0.7110,0.7119,0.7181,0.7291,0.7445,0.7634,0.7850,0.8083,0.8321,0.8553,0.8768,0.8955,0.9106,0.9215,0.9276,0.9290,0.9259,0.9189,0.9087,0.8964,0.8830,0.8697,0.8576,0.8475,0.8401,0.8360,0.8353,0.8379,0.8435,0.8515,0.8611,0.8715,0.8817,0.8909,0.8982,0.9030,0.9049,0.9038,0.8998,0.8932,0.8846,0.8746,0.8642,0.8539,0.8447,0.8370,0.8314,0.8280,0.8270,0.8282,0.8313,0.8360,0.8417,0.8479,0.8540,0.8595,0.8640,0.8670,0.8683,0.8678,0.8655,0.8615,0.8559,0.8491,0.8415,0.8333,0.8250,0.8170,0.8094,0.8027,0.7970,0.7925,0.7892,0.7872];
-  function dragonRadius(theta, Rb){
-    const deg = ((theta * 180 / Math.PI) + 360) % 360;
-    const i0 = Math.floor(deg) % 360;
-    const i1 = (i0 + 1) % 360;
-    const t = deg - Math.floor(deg);
-    return Rb * (DRAGON_SHAPE_RATIOS[i0] +
-      (DRAGON_SHAPE_RATIOS[i1] - DRAGON_SHAPE_RATIOS[i0]) * t);
-  }
+  // BUILD 80: switch the secret stage away from the unreadable radial blob.
+  // The dragon now uses a traced closed-outline silhouette based on the
+  // user's preferred S-curve dragon drawing. Gameplay follows the nearest
+  // point on that outline rather than a single radius-per-angle model, so
+  // the mold can stay recognizably dragon-shaped.
+  const DRAGON_OUTLINE_NORM = [
+  [-0.02715,-0.50000],
+  [-0.04269,-0.49519],
+  [-0.05758,-0.48880],
+  [-0.07179,-0.48077],
+  [-0.08574,-0.47212],
+  [-0.09901,-0.46180],
+  [-0.11205,-0.45096],
+  [-0.12493,-0.43972],
+  [-0.13790,-0.42868],
+  [-0.15086,-0.41764],
+  [-0.16388,-0.40673],
+  [-0.17735,-0.39692],
+  [-0.18085,-0.40207],
+  [-0.17389,-0.41672],
+  [-0.16753,-0.43163],
+  [-0.16273,-0.44717],
+  [-0.16508,-0.46294],
+  [-0.18115,-0.46235],
+  [-0.19467,-0.45267],
+  [-0.20639,-0.43999],
+  [-0.21675,-0.42674],
+  [-0.22619,-0.41312],
+  [-0.23543,-0.39941],
+  [-0.24446,-0.38561],
+  [-0.25407,-0.37206],
+  [-0.26424,-0.35962],
+  [-0.27898,-0.35288],
+  [-0.29294,-0.34423],
+  [-0.30578,-0.33291],
+  [-0.31561,-0.31944],
+  [-0.31946,-0.30350],
+  [-0.32138,-0.28676],
+  [-0.33158,-0.27345],
+  [-0.34455,-0.26241],
+  [-0.35836,-0.25341],
+  [-0.37289,-0.24615],
+  [-0.38710,-0.25226],
+  [-0.40358,-0.25096],
+  [-0.41657,-0.24135],
+  [-0.42285,-0.22641],
+  [-0.42234,-0.20946],
+  [-0.41753,-0.19392],
+  [-0.40831,-0.18020],
+  [-0.39535,-0.16916],
+  [-0.38607,-0.15603],
+  [-0.37514,-0.14415],
+  [-0.36036,-0.13750],
+  [-0.34386,-0.13499],
+  [-0.32688,-0.13558],
+  [-0.31174,-0.14137],
+  [-0.30206,-0.15489],
+  [-0.28910,-0.16594],
+  [-0.27492,-0.17404],
+  [-0.25977,-0.17981],
+  [-0.24303,-0.18173],
+  [-0.22589,-0.18269],
+  [-0.20907,-0.18442],
+  [-0.19358,-0.18934],
+  [-0.17892,-0.19630],
+  [-0.16451,-0.20385],
+  [-0.14777,-0.20577],
+  [-0.13187,-0.20183],
+  [-0.11930,-0.19119],
+  [-0.11369,-0.17598],
+  [-0.11465,-0.15964],
+  [-0.12091,-0.14470],
+  [-0.13003,-0.13094],
+  [-0.14231,-0.11849],
+  [-0.15538,-0.10769],
+  [-0.16893,-0.09808],
+  [-0.18261,-0.08877],
+  [-0.19642,-0.07977],
+  [-0.20995,-0.07009],
+  [-0.22319,-0.05973],
+  [-0.23587,-0.04800],
+  [-0.24788,-0.03600],
+  [-0.25892,-0.02304],
+  [-0.26860,-0.00951],
+  [-0.27692,0.00458],
+  [-0.28320,0.01951],
+  [-0.28869,0.03477],
+  [-0.29253,0.05072],
+  [-0.29446,0.06746],
+  [-0.29542,0.08460],
+  [-0.29446,0.10173],
+  [-0.29963,0.11058],
+  [-0.31113,0.09871],
+  [-0.32409,0.08767],
+  [-0.33903,0.08139],
+  [-0.35565,0.08043],
+  [-0.37171,0.08399],
+  [-0.38552,0.09299],
+  [-0.39350,0.10722],
+  [-0.38091,0.11442],
+  [-0.38084,0.12019],
+  [-0.39357,0.13181],
+  [-0.40119,0.14619],
+  [-0.40407,0.16253],
+  [-0.39868,0.17692],
+  [-0.38391,0.17023],
+  [-0.37322,0.16818],
+  [-0.37330,0.18489],
+  [-0.36751,0.20002],
+  [-0.35326,0.20111],
+  [-0.34358,0.18758],
+  [-0.33157,0.17558],
+  [-0.31706,0.17404],
+  [-0.30391,0.18462],
+  [-0.28956,0.19231],
+  [-0.27282,0.19423],
+  [-0.25605,0.19237],
+  [-0.24405,0.20425],
+  [-0.23109,0.21529],
+  [-0.21784,0.22565],
+  [-0.20402,0.23462],
+  [-0.18967,0.24229],
+  [-0.17453,0.24808],
+  [-0.15923,0.25349],
+  [-0.14317,0.25705],
+  [-0.12670,0.25962],
+  [-0.10993,0.26145],
+  [-0.09274,0.26078],
+  [-0.07569,0.25962],
+  [-0.05895,0.25769],
+  [-0.04260,0.25481],
+  [-0.02626,0.25192],
+  [-0.00913,0.25096],
+  [0.00785,0.25231],
+  [0.02279,0.25859],
+  [0.03343,0.27115],
+  [0.03439,0.28749],
+  [0.02743,0.30215],
+  [0.01639,0.31511],
+  [0.00371,0.32683],
+  [-0.00869,0.33923],
+  [-0.01946,0.35230],
+  [-0.02737,0.36656],
+  [-0.03587,0.37885],
+  [-0.05301,0.37788],
+  [-0.06882,0.37372],
+  [-0.08431,0.36880],
+  [-0.09953,0.36320],
+  [-0.10696,0.34874],
+  [-0.11549,0.33474],
+  [-0.12845,0.32370],
+  [-0.14294,0.31635],
+  [-0.15917,0.31317],
+  [-0.17602,0.31346],
+  [-0.19129,0.31895],
+  [-0.20510,0.32795],
+  [-0.21176,0.34272],
+  [-0.19773,0.34904],
+  [-0.18789,0.35288],
+  [-0.20264,0.35962],
+  [-0.21561,0.37038],
+  [-0.22406,0.38441],
+  [-0.22811,0.40027],
+  [-0.22400,0.41538],
+  [-0.20886,0.41152],
+  [-0.19449,0.40388],
+  [-0.18869,0.40933],
+  [-0.19253,0.42527],
+  [-0.19157,0.44241],
+  [-0.18358,0.45607],
+  [-0.16932,0.45083],
+  [-0.15896,0.43758],
+  [-0.14668,0.42626],
+  [-0.13166,0.42019],
+  [-0.11653,0.42600],
+  [-0.10296,0.43558],
+  [-0.08892,0.44400],
+  [-0.07426,0.45096],
+  [-0.05792,0.45385],
+  [-0.04078,0.45481],
+  [-0.02325,0.45481],
+  [-0.00833,0.46113],
+  [0.00463,0.47217],
+  [0.01860,0.48077],
+  [0.03337,0.48745],
+  [0.04890,0.49231],
+  [0.06484,0.49615],
+  [0.08156,0.49813],
+  [0.09832,0.50000],
+  [0.11546,0.49904],
+  [0.13256,0.49799],
+  [0.14893,0.49519],
+  [0.16488,0.49135],
+  [0.18074,0.48730],
+  [0.19597,0.48173],
+  [0.21111,0.47596],
+  [0.22586,0.46923],
+  [0.24021,0.46154],
+  [0.25428,0.45318],
+  [0.26809,0.44418],
+  [0.28133,0.43382],
+  [0.29402,0.42210],
+  [0.30602,0.41010],
+  [0.31706,0.39714],
+  [0.32742,0.38390],
+  [0.33631,0.37005],
+  [0.34400,0.35570],
+  [0.35074,0.34095],
+  [0.35650,0.32580],
+  [0.36131,0.31026],
+  [0.36442,0.29401],
+  [0.36730,0.27767],
+  [0.36900,0.26084],
+  [0.36997,0.24370],
+  [0.36997,0.22616],
+  [0.37189,0.20943],
+  [0.38218,0.19712],
+  [0.39551,0.18696],
+  [0.40655,0.17399],
+  [0.41487,0.15990],
+  [0.41997,0.14448],
+  [0.42285,0.12814],
+  [0.42285,0.11060],
+  [0.42189,0.09346],
+  [0.41191,0.08365],
+  [0.39973,0.09523],
+  [0.39073,0.10904],
+  [0.38727,0.09601],
+  [0.38439,0.07967],
+  [0.38054,0.06373],
+  [0.37670,0.04779],
+  [0.37477,0.03105],
+  [0.37610,0.01406],
+  [0.37958,-0.00204],
+  [0.36697,-0.00673],
+  [0.35222,0.00000],
+  [0.33911,0.01067],
+  [0.32806,0.02363],
+  [0.31997,0.03782],
+  [0.31346,0.05266],
+  [0.30843,0.06811],
+  [0.30430,0.08394],
+  [0.29734,0.08218],
+  [0.29400,0.06602],
+  [0.28076,0.06901],
+  [0.27244,0.08310],
+  [0.26708,0.09842],
+  [0.26420,0.11476],
+  [0.26420,0.13230],
+  [0.26804,0.14824],
+  [0.27381,0.16339],
+  [0.28276,0.17722],
+  [0.29380,0.19018],
+  [0.30362,0.20365],
+  [0.30554,0.22039],
+  [0.30362,0.23713],
+  [0.29964,0.25302],
+  [0.29400,0.26822],
+  [0.28640,0.28261],
+  [0.27766,0.29653],
+  [0.26703,0.30966],
+  [0.25463,0.32207],
+  [0.24139,0.33243],
+  [0.22730,0.34075],
+  [0.21264,0.34771],
+  [0.19645,0.35096],
+  [0.18052,0.34709],
+  [0.17381,0.33233],
+  [0.17670,0.31599],
+  [0.18119,0.30031],
+  [0.18535,0.28450],
+  [0.18824,0.26816],
+  [0.18920,0.25102],
+  [0.18920,0.23348],
+  [0.18631,0.21714],
+  [0.18195,0.20141],
+  [0.17574,0.18645],
+  [0.16735,0.17239],
+  [0.15699,0.15914],
+  [0.14499,0.14714],
+  [0.13146,0.13746],
+  [0.11737,0.12913],
+  [0.10243,0.12285],
+  [0.08719,0.11731],
+  [0.07125,0.11346],
+  [0.05491,0.11058],
+  [0.03777,0.10962],
+  [0.02063,0.10865],
+  [0.00349,0.10962],
+  [-0.01325,0.11154],
+  [-0.02999,0.11346],
+  [-0.04672,0.11538],
+  [-0.06386,0.11635],
+  [-0.08100,0.11538],
+  [-0.09622,0.10978],
+  [-0.10792,0.09765],
+  [-0.11176,0.08171],
+  [-0.10819,0.06565],
+  [-0.10055,0.05128],
+  [-0.09018,0.03804],
+  [-0.07778,0.02563],
+  [-0.06482,0.01459],
+  [-0.05173,0.00385],
+  [-0.03833,-0.00613],
+  [-0.02480,-0.01581],
+  [-0.01155,-0.02617],
+  [0.00141,-0.03721],
+  [0.01409,-0.04894],
+  [0.02514,-0.06190],
+  [0.03482,-0.07543],
+  [0.04208,-0.08996],
+  [0.04806,-0.10502],
+  [0.05638,-0.10974],
+  [0.06538,-0.09593],
+  [0.07907,-0.10045],
+  [0.08343,-0.11619],
+  [0.08535,-0.13293],
+  [0.08439,-0.15007],
+  [0.08150,-0.16641],
+  [0.07654,-0.18189],
+  [0.07026,-0.19682],
+  [0.07260,-0.20673],
+  [0.08854,-0.20288],
+  [0.10329,-0.19615],
+  [0.11860,-0.19383],
+  [0.12093,-0.21040],
+  [0.11613,-0.22595],
+  [0.10917,-0.24061],
+  [0.09881,-0.25385],
+  [0.08612,-0.26557],
+  [0.07231,-0.27458],
+  [0.05814,-0.28269],
+  [0.04385,-0.29054],
+  [0.03874,-0.29954],
+  [0.05395,-0.30514],
+  [0.06924,-0.31058],
+  [0.08343,-0.31730],
+  [0.07811,-0.33128],
+  [0.06434,-0.34038],
+  [0.04920,-0.34615],
+  [0.03325,-0.35000],
+  [0.01651,-0.35192],
+  [-0.00102,-0.35192],
+  [-0.01856,-0.35192],
+  [-0.02212,-0.35673],
+  [-0.00856,-0.36635],
+  [0.00403,-0.37829],
+  [0.01303,-0.39210],
+  [0.01516,-0.40796],
+  [-0.00089,-0.41058],
+  [-0.01763,-0.40865],
+  [-0.03366,-0.40503],
+  [-0.04944,-0.40079],
+  [-0.06466,-0.39519],
+  [-0.08016,-0.39026],
+  [-0.09535,-0.38462],
+  [-0.09704,-0.38973],
+  [-0.08436,-0.40145],
+  [-0.07196,-0.41385],
+  [-0.05927,-0.42557],
+  [-0.04631,-0.43661],
+  [-0.03363,-0.44833],
+  [-0.02094,-0.46005],
+  [-0.00922,-0.47274],
+  [-0.00119,-0.48695],
+  [-0.00996,-0.49916],
+];
 
   // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
@@ -1445,7 +1800,7 @@
     { name:'りんご飴', key:'ringoame',   shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
     { name:'風ぐるま', key:'kazaguruma', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:4 },
     { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:5 },
-    { name:'龍',       key:'dragon',     shapeFn:dragonRadius,     fill:'255,165,45', difficulty:5, secret:true }
+    { name:'龍',       key:'dragon',     shapeFn:(th,Rb)=>Rb,      outlinePts:DRAGON_OUTLINE_NORM, fill:'255,165,45', difficulty:5, secret:true }
   ];
 
   // ---- clear-scene image assets ----
@@ -1517,33 +1872,47 @@
   let plateEdgePath = null;
   let shapePts = [];
   let shapePath = null;
+  let shapeIsOutline = false;
+  let plateEdgePts = [];
 
   function buildStageCache(){
     const stage = STAGES[currentStageIndex];
     shapePts = [];
     shapePath = new Path2D();
+    shapeIsOutline = !!stage.outlinePts;
+    plateEdgePts = [];
     let maxR = 0;
-    for(let i = 0; i < N_BUCKETS; i++){
-      const a = (i / N_BUCKETS) * Math.PI * 2;
-      const r = stage.shapeFn(a, R);
-      targetRCache[i] = r;
-      if(r > maxR) maxR = r;
-      const x = cx + r * Math.cos(a);
-      const y = cy + r * Math.sin(a);
-      shapePts.push({x, y});
-      if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
+
+    if(shapeIsOutline){
+      const scale = R * 2.0;
+      stage.outlinePts.forEach((pt, i) => {
+        const x = cx + pt[0] * scale;
+        const y = cy + pt[1] * scale;
+        const r = Math.hypot(x - cx, y - cy);
+        targetRCache[i] = r;
+        if(r > maxR) maxR = r;
+        shapePts.push({x, y});
+        if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
+      });
+      shapePath.closePath();
+    }else{
+      for(let i = 0; i < N_BUCKETS; i++){
+        const a = (i / N_BUCKETS) * Math.PI * 2;
+        const r = stage.shapeFn(a, R);
+        targetRCache[i] = r;
+        if(r > maxR) maxR = r;
+        const x = cx + r * Math.cos(a);
+        const y = cy + r * Math.sin(a);
+        shapePts.push({x, y});
+        if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
+      }
+      shapePath.closePath();
     }
-    shapePath.closePath();
-    // The candy sits centered and large, with the shape resting inside it.
-    // A squircle's farthest axis-aligned reach is exactly S, at the flat
-    // edge midpoint (the corners, despite being radially farther, project
-    // to a *smaller* x/y extent) — so the only real constraint is S itself
-    // staying under the canvas half-width. Start from a generous rim
-    // thickness and shrink it only if that would run past the edge.
+
     const maxEdge = W*0.48;
     let S = maxR + safeBand + W*0.09;
     if(S > maxEdge) S = maxEdge;
-    S = Math.max(S, maxR + safeBand + W*0.01); // last-resort: never clip the shape
+    S = Math.max(S, maxR + safeBand + W*0.01);
     plateR = S;
     plateEdgePath = new Path2D();
     for(let i = 0; i < N_BUCKETS; i++){
@@ -1551,6 +1920,7 @@
       const er = squircleRadius(a, plateR, PLATE_SQUIRCLE_N);
       plateEdgeCache[i] = er;
       const x = cx + er * Math.cos(a), y = cy + er * Math.sin(a);
+      plateEdgePts.push({x, y});
       if(i === 0) plateEdgePath.moveTo(x, y); else plateEdgePath.lineTo(x, y);
     }
     plateEdgePath.closePath();
@@ -2186,11 +2556,16 @@
     // though the actual judged state has already become red.
     draw();
     failSnapshot = captureFailSnapshot();
-    const fdx = x - cx, fdy = y - cy;
-    const fdist = Math.hypot(fdx, fdy);
-    const fdeg = ((Math.atan2(fdy, fdx) * 180 / Math.PI) + 360) % 360;
-    const fbucket = Math.round(fdeg) % N_BUCKETS;
-    failDepth = Math.max(0, targetRCache[fbucket] - fdist);
+    if(shapeIsOutline){
+      const finfo = getOutlineJudgeInfo({x, y});
+      failDepth = finfo.inside ? finfo.dist : 0;
+    }else{
+      const fdx = x - cx, fdy = y - cy;
+      const fdist = Math.hypot(fdx, fdy);
+      const fdeg = ((Math.atan2(fdy, fdx) * 180 / Math.PI) + 360) % 360;
+      const fbucket = Math.round(fdeg) % N_BUCKETS;
+      failDepth = Math.max(0, targetRCache[fbucket] - fdist);
+    }
     failCracks = [];
     for(let i = 0; i < 7; i++){
       failCracks.push({
@@ -2294,10 +2669,181 @@
     processInterpolatedMove(rawTip);
   }
 
+  function pointInPolygon(x, y, pts){
+    let inside = false;
+    for(let i = 0, j = pts.length - 1; i < pts.length; j = i++){
+      const xi = pts[i].x, yi = pts[i].y;
+      const xj = pts[j].x, yj = pts[j].y;
+      const intersect = ((yi > y) !== (yj > y)) &&
+        (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function nearestPointOnSegment(px, py, ax, ay, bx, by){
+    const abx = bx - ax, aby = by - ay;
+    const ab2 = abx*abx + aby*aby;
+    let t = ab2 > 1e-6 ? ((px - ax)*abx + (py - ay)*aby) / ab2 : 0;
+    if(t < 0) t = 0;
+    if(t > 1) t = 1;
+    const x = ax + abx * t;
+    const y = ay + aby * t;
+    const dx = px - x, dy = py - y;
+    return { x, y, t, dist2: dx*dx + dy*dy };
+  }
+
+  function getOutlineJudgeInfo(pt){
+    let best = { dist2: Infinity, bucket: 0, x: cx, y: cy };
+    for(let i = 0; i < shapePts.length; i++){
+      const a = shapePts[i];
+      const b = shapePts[(i + 1) % shapePts.length];
+      const hit = nearestPointOnSegment(pt.x, pt.y, a.x, a.y, b.x, b.y);
+      if(hit.dist2 < best.dist2){
+        const bucket = (Math.round(i + hit.t) + N_BUCKETS) % N_BUCKETS;
+        best = { dist2: hit.dist2, bucket, x: hit.x, y: hit.y };
+      }
+    }
+    const inside = pointInPolygon(pt.x, pt.y, shapePts);
+    return {
+      bucket: best.bucket,
+      closest: { x: best.x, y: best.y },
+      dist: Math.sqrt(best.dist2),
+      inside
+    };
+  }
+
+  function spawnChipFragmentOutline(bucket, now, point){
+    const next = shapePts[(bucket + 1) % N_BUCKETS] || point;
+    const tx = next.x - point.x, ty = next.y - point.y;
+    const len = Math.hypot(tx, ty) || 1;
+    let nx = -ty / len, ny = tx / len;
+    if(pointInPolygon(point.x + nx * 6, point.y + ny * 6, shapePts)){
+      nx *= -1; ny *= -1;
+    }
+    const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+    for(let k = 0; k < n; k++){
+      chipFrags.push({
+        x: point.x, y: point.y,
+        vx: nx * (W*0.05 + Math.random()*W*0.05) + (Math.random()-0.5)*W*0.03,
+        vy: ny * (W*0.05 + Math.random()*W*0.05) + (Math.random()-0.5)*W*0.03,
+        size: W*0.005 + Math.random()*W*0.006,
+        born: now
+      });
+    }
+  }
+
+  function applyOutlineSnap(rawTip, closest, magnetRange, snapStrength, maxInside){
+    const dx = closest.x - rawTip.x;
+    const dy = closest.y - rawTip.y;
+    const dist = Math.hypot(dx, dy);
+    let tip = { x: rawTip.x, y: rawTip.y };
+    if(dist <= magnetRange){
+      const proximity = 1 - dist / magnetRange;
+      const amt = proximity * proximity * snapStrength;
+      tip = { x: rawTip.x + dx * amt, y: rawTip.y + dy * amt };
+    }
+    if(typeof maxInside === 'number' && pointInPolygon(tip.x, tip.y, shapePts)){
+      const inDx = tip.x - closest.x, inDy = tip.y - closest.y;
+      const inDist = Math.hypot(inDx, inDy) || 1;
+      if(inDist > maxInside){
+        tip = { x: closest.x + inDx / inDist * maxInside, y: closest.y + inDy / inDist * maxInside };
+      }
+    }
+    return tip;
+  }
+
+  function handleMoveOutline(rawTip, cfg){
+    const info = getOutlineJudgeInfo(rawTip);
+    const rawDiff = info.inside ? -info.dist : info.dist;
+
+    if(rawDiff < -cfg.innerFail){
+      needle = rawTip;
+      if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
+      gameOver(rawTip.x, rawTip.y);
+      return;
+    }
+
+    if(typeof cfg.innerWarnOnly === 'number' && rawDiff < -cfg.innerWarnOnly){
+      needle = rawTip;
+      if(currentState !== 'yellow'){
+        currentState = 'yellow';
+        vibrate(5);
+      }
+      return;
+    }
+
+    const tip = applyOutlineSnap(rawTip, info.closest, cfg.magnetRange, cfg.snapStrength, cfg.clampInside);
+    needle = tip;
+    const tipInfo = getOutlineJudgeInfo(tip);
+    const diff = tipInfo.inside ? -tipInfo.dist : tipInfo.dist;
+
+    const newState = diff >= -cfg.greenInner && diff <= cfg.greenOuter ? 'green' : 'yellow';
+    if(newState !== currentState){
+      currentState = newState;
+      vibrate(newState === 'green' ? [0,12] : 5);
+    }
+    if(newState !== 'green') return;
+
+    const now = performance.now();
+    let scraped = false;
+    const bucket = tipInfo.bucket;
+    const offsets = cfg.offsets(bucket);
+    if(cfg.trackDirection){
+      let moveDir = 1;
+      if(lastEasyBucket !== null){
+        let delta = bucket - lastEasyBucket;
+        if(delta > N_BUCKETS/2) delta -= N_BUCKETS;
+        if(delta < -N_BUCKETS/2) delta += N_BUCKETS;
+        if(delta < 0) moveDir = -1;
+      }
+      lastEasyBucket = bucket;
+      offsets.splice(0, offsets.length, ...(moveDir > 0 ? cfg.forwardOffsets : cfg.backwardOffsets));
+    }
+    for(const i of offsets){
+      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
+      lastErodeAt[b] = now;
+      const wasDone = erosion[b] >= EROSION_DONE;
+      erosion[b] = 1;
+      scraped = true;
+      strokeHasCarved = true;
+      if(!wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
+      }
+      const emitChance = cfg.fragmentChance(i);
+      if(Math.random() < emitChance) spawnChipFragmentOutline(b, now, shapePts[b]);
+    }
+    if(!scraped) return;
+    updateProgress();
+    if(now - lastScratchAt > cfg.scratchGap){ lastScratchAt = now; playScratch(); vibrate(4); }
+    if(now - lastChipBreakAt > cfg.breakGap){ lastChipBreakAt = now; playChipBreak(); }
+    if(erodedCount >= N_BUCKETS){
+      elapsed = (performance.now() - startTime) / 1000;
+      clearGame();
+    }
+  }
+
   // ハードモード: BUILD 72 makes the former NORMAL judgment the new HARD.
   // It still offers a small visual magnet so the trace remains readable, but
   // the inward tolerance is narrow and any deeper breach turns red and fails.
   function handleMoveHard(rawTip){
+    if(shapeIsOutline){
+      return handleMoveOutline(rawTip, {
+        innerFail: safeBand * 0.42,
+        innerWarnOnly: 0,
+        magnetRange: safeBand * 2.2,
+        snapStrength: 0.52,
+        clampInside: null,
+        greenInner: 0,
+        greenOuter: safeBand,
+        offsets: ()=>[0],
+        fragmentChance: (i)=>(i === 0 ? 0.30 : 0.12),
+        scratchGap: 82,
+        breakGap: 240
+      });
+    }
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
     if(dist0 < 0.001){ needle = rawTip; return; }
@@ -2367,6 +2913,23 @@
   // snaps toward the mold's outline, with forgiving room on both sides of
   // the line, and a shallow dip inside still only warns before it fails.
   function handleMoveEasy(rawTip){
+    if(shapeIsOutline){
+      return handleMoveOutline(rawTip, {
+        innerFail: safeBand * 1.05,
+        magnetRange: safeBand * 2.5,
+        snapStrength: 0.56,
+        clampInside: safeBand * 0.42,
+        greenInner: safeBand * 0.42,
+        greenOuter: safeBand * 1.15,
+        offsets: ()=>[],
+        trackDirection: true,
+        forwardOffsets: [-1,0,1,2],
+        backwardOffsets: [-2,-1,0,1],
+        fragmentChance: (i)=>(i === 0 ? 0.30 : Math.abs(i) === 1 ? 0.16 : 0.08),
+        scratchGap: 88,
+        breakGap: 260
+      });
+    }
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
     if(dist0 < 0.001){ needle = rawTip; return; }
@@ -2449,6 +3012,21 @@
   // NORMAL. It allows a small inward green corridor, gives a wider yellow
   // warning zone before failure, and uses slightly stronger magnet support.
   function handleMoveNormal(rawTip){
+    if(shapeIsOutline){
+      return handleMoveOutline(rawTip, {
+        innerFail: safeBand * 1.00,
+        innerWarnOnly: safeBand * 0.32,
+        magnetRange: safeBand * 2.65,
+        snapStrength: 0.60,
+        clampInside: safeBand * 0.32,
+        greenInner: safeBand * 0.32,
+        greenOuter: safeBand * 1.20,
+        offsets: ()=>[-1,0,1],
+        fragmentChance: (i)=>(i === 0 ? 0.30 : 0.16),
+        scratchGap: 84,
+        breakGap: 245
+      });
+    }
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
     if(dist0 < 0.001){ needle = rawTip; return; }
@@ -2843,41 +3421,75 @@
         if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
         const a0 = (i / N_BUCKETS) * Math.PI * 2;
         const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx + innerR*Math.cos(a0), cy + innerR*Math.sin(a0));
-        ctx.lineTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
-        ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
-        ctx.lineTo(cx + innerR*Math.cos(a1), cy + innerR*Math.sin(a1));
-        ctx.arc(cx, cy, innerR, a1, a0, true);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-        if(outerR < edgeR - 1){
-          // a crumbling wedge shows a rougher, darker broken edge
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+        if(shapeIsOutline){
+          const p0 = shapePts[i];
+          const p1 = shapePts[(i + 1) % N_BUCKETS];
+          const edge0 = plateEdgePts[i];
+          const edge1 = plateEdgePts[(i + 1) % N_BUCKETS];
+          const outer0 = { x: p0.x + (edge0.x - p0.x) * (1 - visualErosion), y: p0.y + (edge0.y - p0.y) * (1 - visualErosion) };
+          const outer1 = { x: p1.x + (edge1.x - p1.x) * (1 - visualErosion), y: p1.y + (edge1.y - p1.y) * (1 - visualErosion) };
           ctx.beginPath();
-          ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
-          ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
-          ctx.stroke();
-        }
-        if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
-          // Close to finished — a bright pulsing outline so even a hair-thin
-          // remaining sliver (easy to miss in a tricky concave spot) stays
-          // clearly visible instead of disappearing to the eye. Only shown
-          // near the end so it doesn't distract during normal play.
-          const pulse = 0.5 + 0.5 * Math.sin(now / 220);
-          ctx.save();
-          ctx.globalAlpha = 0.55 + 0.35 * pulse;
-          ctx.lineWidth = 2.4;
-          ctx.strokeStyle = 'rgba(255,205,60,1)';
-          ctx.shadowColor = 'rgba(255,205,60,0.9)';
-          ctx.shadowBlur = 6 + 4*pulse;
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(outer0.x, outer0.y);
+          ctx.lineTo(outer1.x, outer1.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+          if(visualErosion > 0){
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+            ctx.beginPath();
+            ctx.moveTo(outer0.x, outer0.y);
+            ctx.lineTo(outer1.x, outer1.y);
+            ctx.stroke();
+          }
+          if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
+            const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+            ctx.save();
+            ctx.globalAlpha = 0.55 + 0.35 * pulse;
+            ctx.lineWidth = 2.4;
+            ctx.strokeStyle = 'rgba(255,205,60,1)';
+            ctx.shadowColor = 'rgba(255,205,60,0.9)';
+            ctx.shadowBlur = 6 + 4*pulse;
+            ctx.beginPath();
+            ctx.moveTo(outer0.x, outer0.y);
+            ctx.lineTo(outer1.x, outer1.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }else{
           ctx.beginPath();
-          ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+          ctx.moveTo(cx + innerR*Math.cos(a0), cy + innerR*Math.sin(a0));
+          ctx.lineTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
           ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
-          ctx.stroke();
-          ctx.restore();
+          ctx.lineTo(cx + innerR*Math.cos(a1), cy + innerR*Math.sin(a1));
+          ctx.arc(cx, cy, innerR, a1, a0, true);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+          if(outerR < edgeR - 1){
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+            ctx.beginPath();
+            ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+            ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+            ctx.stroke();
+          }
+          if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
+            const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+            ctx.save();
+            ctx.globalAlpha = 0.55 + 0.35 * pulse;
+            ctx.lineWidth = 2.4;
+            ctx.strokeStyle = 'rgba(255,205,60,1)';
+            ctx.shadowColor = 'rgba(255,205,60,0.9)';
+            ctx.shadowBlur = 6 + 4*pulse;
+            ctx.beginPath();
+            ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+            ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+            ctx.stroke();
+            ctx.restore();
+          }
         }
       }
     } else if(plateEdgePath){
