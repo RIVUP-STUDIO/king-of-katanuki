@@ -988,8 +988,20 @@
           <button class="devToggleBtn" data-dev="festivalFrame"></button>
           <button class="devToggleBtn" data-dev="starTip"></button>
           <button class="devToggleBtn" data-dev="unlockAll"></button>
+          <button id="devSecretPreviewBtn" style="display:block;width:100%;margin:8px 0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,120,60,.45);background:rgba(255,120,60,.10);color:#ffb37a;text-align:left;font-size:13px;font-weight:800;">シークレット演出を今すぐ見る</button>
           <button id="devCloseBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:#fbf3df;font-weight:800;">閉じる</button>
         </div>`;
+      developerPanelEl.querySelector('#devSecretPreviewBtn').addEventListener('click', () => {
+        const idx = STAGES.findIndex(s => s.secret);
+        if(idx < 0) return;
+        devSettings.unlockAll = true;
+        saveDevSettings();
+        gameMode = 'hard';
+        developerPanelEl.style.display = 'none';
+        startGame(idx, { skipStats: true, preview: true });
+        // 実際に型抜きさせず、選んだ瞬間にクリア演出(フリーズ→暗転→龍reveal)へ直行
+        requestAnimationFrame(() => clearGame());
+      });
       developerPanelEl.querySelectorAll('.devToggleBtn').forEach(btn => {
         btn.style.cssText = 'display:block;width:100%;margin:8px 0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,205,120,.25);background:rgba(255,255,255,.055);color:#fbf3df;text-align:left;font-size:13px;font-weight:800;';
         btn.addEventListener('click', () => {
@@ -1827,6 +1839,7 @@
   const EROSION_DONE = 0.97;   // treat a bucket as fully cleared past this
   let sessionFailCount = 0;    // fails since this stage was last freshly picked (survives retries)
   let albumSaved = false;      // guards against saving the same clear twice
+  let devPreviewRun = false;   // true only for the dev-panel "シークレット演出を今すぐ見る" shortcut — skips markStageCleared/saveToAlbum/stat bumps
 
 
   // ---- BUILD 57: fair input tracking ----
@@ -2022,7 +2035,7 @@
   }
 
   let lastStageIndexStarted = -1;
-  function startGame(stageIndex){
+  function startGame(stageIndex, opts){
     if(typeof stageIndex === 'number' && !isStageUnlocked(stageIndex, gameMode)){
       showDebugToast(unlockMessage(stageIndex, gameMode));
       return;
@@ -2031,8 +2044,9 @@
       cancelAnimationFrame(rafId);
       rafId = null;
     }
+    devPreviewRun = !!(opts && opts.preview);
     if(typeof stageIndex === 'number'){
-      if(stageIndex !== lastStageIndexStarted){
+      if(stageIndex !== lastStageIndexStarted && !(opts && opts.skipStats)){
         sessionFailCount = 0;
         profile.totalPlays++;
         addXP(5);
@@ -2267,7 +2281,7 @@
 
   function clearGame(){
     mode = 'clearReveal';
-    markStageCleared(STAGES[currentStageIndex].key);
+    if(!devPreviewRun) markStageCleared(STAGES[currentStageIndex].key);
     needle = null;
     handlePos = null;
     clearPhaseStart = performance.now();
@@ -2842,10 +2856,12 @@
       albumSaved = true;
       // wait one frame so this fully-lit frame (fireworks included) has
       // actually been painted before we grab it as the keepsake image
-      requestAnimationFrame(() => {
-        try{ saveToAlbum(); }
-        catch(e){ showDebugToast('save trigger failed: ' + (e && e.message ? e.message : e)); }
-      });
+      if(!devPreviewRun){
+        requestAnimationFrame(() => {
+          try{ saveToAlbum(); }
+          catch(e){ showDebugToast('save trigger failed: ' + (e && e.message ? e.message : e)); }
+        });
+      }
     }
     // gentle float once the piece is fully lifted and the festival opens up
     const celebBob = celebT > 0 ? Math.sin(now / 420) * W*0.012 * celebT : 0;
