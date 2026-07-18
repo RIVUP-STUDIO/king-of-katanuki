@@ -45,6 +45,12 @@
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
   const CELEBRATION_MS = 1300; // festival scene fade-in before the result screen
   const DRAGON_FREEZE_MS = 260; // 龍(secret)だけ: パチスロ風フリーズ→プチュン暗転の長さ
+  const DRAGON_BLACKOUT_MS = 1000; // フリーズ後、何も映さない完全な暗転を保持する長さ
+  const DRAGON_REVEAL_MS = 900; // 暗転明け〜提灯点灯〜龍フル表示までの長さ
+  function liftPhaseMs(stage){
+    // 龍(secret)はフリーズ+暗転+reveal の合計、それ以外は通常のCLEAR_LIFT_MS
+    return (stage && stage.secret) ? (DRAGON_FREEZE_MS + DRAGON_BLACKOUT_MS + DRAGON_REVEAL_MS) : CLEAR_LIFT_MS;
+  }
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -2281,7 +2287,7 @@
       const isLast = currentStageIndex === STAGES.length - 1;
       nextBtn.textContent = isLast ? 'さいしょのステージへ' : 'つぎのステージへ';
       showScreen(clearScreen);
-    }, CLEAR_PAUSE_MS + CLEAR_LIFT_MS + CELEBRATION_MS);
+    }, CLEAR_PAUSE_MS + liftPhaseMs(STAGES[currentStageIndex]) + CELEBRATION_MS);
   }
 
   // ---- input ----
@@ -2800,13 +2806,14 @@
     const now = performance.now();
     const isShattering = mode === 'gameover' && shards.length > 0;
     const isDragonSecret = STAGES[currentStageIndex] && STAGES[currentStageIndex].secret;
+    const liftDur = liftPhaseMs(STAGES[currentStageIndex]);
 
     // ---- clear "detach" timeline ----
     let liftProgress = 0; // 0..1 across the lift phase only (pause phase = 0)
     if(clearPhaseStart !== null){
       const t = now - clearPhaseStart;
       if(t > CLEAR_PAUSE_MS){
-        liftProgress = Math.min(1, (t - CLEAR_PAUSE_MS) / CLEAR_LIFT_MS);
+        liftProgress = Math.min(1, (t - CLEAR_PAUSE_MS) / liftDur);
       }
     }
     const liftEase = 1 - Math.pow(1 - liftProgress, 3); // ease-out cubic
@@ -2820,7 +2827,7 @@
     // ---- festival celebration timeline (starts once the lift finishes) ----
     let celebT = 0;
     if(clearPhaseStart !== null){
-      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
+      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + liftDur);
       if(tSinceLift > 0) celebT = Math.min(1, tSinceLift / 900);
     }
     if(celebT > 0 && !celebTriggered){
@@ -2852,8 +2859,9 @@
     ctx.translate(-cx, -cy);
 
     // 龍(secret): PAUSE の間は他ステージと同じく完成した削り跡をそのまま見せ、
-    // PAUSE が終わった瞬間にパチスロのフリーズ風の暗転カットを挟んでから、
-    // 提灯点灯→龍の発光という夜祭りの reveal に入る。
+    // PAUSE が終わった瞬間にパチスロのフリーズ風の暗転カットを挟み、そのあと
+    // 何も映らない完全な暗転を1秒はさんでから、型抜きの枠を使わずに龍の
+    // イラストそのものをフルで浮かび上がらせる。
     const tSincePhaseStart = clearPhaseStart !== null ? (now - clearPhaseStart) : -1;
     const inSecretFreezeOrReveal = isDragonSecret && clearPhaseStart !== null && tSincePhaseStart > CLEAR_PAUSE_MS;
     if(inSecretFreezeOrReveal){
@@ -2870,9 +2878,17 @@
         }
         drawDragonShutdownFreeze(Math.min(1, Math.max(0, freezeT)));
       } else {
-        const revealT2 = Math.min(1, (tSincePhaseStart - CLEAR_PAUSE_MS - DRAGON_FREEZE_MS) /
-          Math.max(1, CLEAR_LIFT_MS - DRAGON_FREEZE_MS));
-        drawDragonSecretBackdrop(revealT2, celebT, now, true);
+        const tAfterFreeze = tSincePhaseStart - CLEAR_PAUSE_MS - DRAGON_FREEZE_MS;
+        if(tAfterFreeze < DRAGON_BLACKOUT_MS){
+          // 型抜きデザインもろとも何も描かない、完全な暗転の間
+          ctx.save();
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, W, H);
+          ctx.restore();
+        } else {
+          const revealT2 = Math.min(1, (tAfterFreeze - DRAGON_BLACKOUT_MS) / DRAGON_REVEAL_MS);
+          drawDragonSecretBackdrop(revealT2, celebT, now, true);
+        }
       }
     } else if(celebT > 0){
       drawFestivalScene(celebT, now);
@@ -3261,7 +3277,7 @@
 
     // brief bright flash the instant the festival scene opens up
     if(clearPhaseStart !== null){
-      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
+      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + liftDur);
       if(tSinceLift >= 0 && tSinceLift < 220){
         const flashA = Math.max(0, 1 - tSinceLift/220) * 0.55;
         ctx.fillStyle = 'rgba(255,247,225,' + flashA + ')';
@@ -3353,8 +3369,11 @@
       ctx.restore();
     });
 
-    // A dim golden halo anticipates the dragon before the illustration fades in.
-    const dragonGlow = Math.max(0, Math.min(1, (revealT - 0.48) / 0.45));
+    // A dim golden halo anticipates the dragon, then fades OUT (型抜きの枠
+    // をオフ) exactly as the real illustration fades IN, full and unclipped.
+    const stageImg = clearImages['龍'];
+    const imgReveal = Math.max(0, Math.min(1, (revealT - 0.55) / 0.35));
+    const dragonGlow = Math.max(0, Math.min(1, (revealT - 0.30) / 0.25)) * (1 - imgReveal);
     if(dragonGlow > 0 && shapePath){
       ctx.save();
       ctx.globalAlpha = dragonGlow * (0.55 + 0.2*Math.sin(now/180));
@@ -3363,6 +3382,16 @@
       ctx.shadowColor = 'rgba(255,100,20,1)';
       ctx.shadowBlur = W*0.055;
       ctx.stroke(shapePath);
+      ctx.restore();
+    }
+    if(imgReveal > 0 && stageImg && stageImg.loaded){
+      ctx.save();
+      ctx.globalAlpha = imgReveal;
+      ctx.shadowColor = 'rgba(255,180,60,0.9)';
+      ctx.shadowBlur = W*0.05*imgReveal;
+      const align = clearImageAlign['龍'];
+      if(align) drawImageAligned(stageImg.img, align);
+      else drawImageCover(stageImg.img, cx, cy, R * 2.5);
       ctx.restore();
     }
 
