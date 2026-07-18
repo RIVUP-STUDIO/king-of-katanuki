@@ -1840,6 +1840,7 @@
   let sessionFailCount = 0;    // fails since this stage was last freshly picked (survives retries)
   let albumSaved = false;      // guards against saving the same clear twice
   let devPreviewRun = false;   // true only for the dev-panel "シークレット演出を今すぐ見る" shortcut — skips markStageCleared/saveToAlbum/stat bumps
+  let dragonImgMissingWarned = false; // one-shot toast if clear_dragon.png never loaded
 
 
   // ---- BUILD 57: fair input tracking ----
@@ -2288,6 +2289,7 @@
     liftTriggered = false;
     celebTriggered = false;
     freezeTriggered = false;
+    dragonImgMissingWarned = false;
     albumSaved = false;
     fireworks = [];
     dust = [];
@@ -3409,6 +3411,9 @@
       if(align) drawImageAligned(stageImg.img, align);
       else drawImageCover(stageImg.img, cx, cy, R * 2.5);
       ctx.restore();
+    } else if(imgReveal > 0.05 && !dragonImgMissingWarned){
+      dragonImgMissingWarned = true;
+      showDebugToast('clear_dragon.png が読み込めていません（images/フォルダに保存済みか確認してください）');
     }
 
     if(celebT > 0.15){
