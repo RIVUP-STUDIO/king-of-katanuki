@@ -584,6 +584,29 @@
       const off = document.createElement('canvas');
       off.width = THUMB; off.height = THUMB;
       const octx = off.getContext('2d');
+      const stage = STAGES[currentStageIndex];
+      if(stage && stage.secret){
+        // 龍(secret): the live reveal is a timed glow→illustration crossfade,
+        // so screenshotting the canvas could catch it mid-transition. The
+        // keepsake photo instead always composes the finished illustration
+        // fresh, full and unclipped, regardless of animation timing.
+        const stageImg = clearImages['龍'];
+        const bg = octx.createRadialGradient(THUMB*0.5, THUMB*0.5, THUMB*0.05, THUMB*0.5, THUMB*0.5, THUMB*0.75);
+        bg.addColorStop(0, '#241012');
+        bg.addColorStop(0.6, '#0a0714');
+        bg.addColorStop(1, '#000002');
+        octx.fillStyle = bg;
+        octx.fillRect(0, 0, THUMB, THUMB);
+        if(stageImg && stageImg.loaded){
+          const iw = stageImg.img.naturalWidth, ih = stageImg.img.naturalHeight;
+          if(iw && ih){
+            const scale = Math.max(THUMB/iw, THUMB/ih);
+            const dw = iw*scale, dh = ih*scale;
+            octx.drawImage(stageImg.img, THUMB/2 - dw/2, THUMB/2 - dh/2, dw, dh);
+          }
+        }
+        return off.toDataURL('image/jpeg', 0.7);
+      }
       octx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMB, THUMB);
       return off.toDataURL('image/jpeg', 0.55);
     }catch(e){
