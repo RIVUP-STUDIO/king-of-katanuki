@@ -44,13 +44,10 @@
   const CLEAR_PAUSE_MS = 200; // beat of stillness once the last stroke lands
   const CLEAR_LIFT_MS = 800;  // the piece lifting free of its mold
   const CELEBRATION_MS = 1300; // festival scene fade-in before the result screen
-  const DRAGON_FREEZE_MS = 260; // 龍(secret)だけ: パチスロ風フリーズ→プチュン暗転の長さ
-  const DRAGON_BLACKOUT_MS = 1000; // フリーズ後、何も映さない完全な暗転を保持する長さ
-  const DRAGON_REVEAL_MS = 900; // 暗転明け〜提灯点灯〜龍フル表示までの長さ
-  function liftPhaseMs(stage){
-    // 龍(secret)はフリーズ+暗転+reveal の合計、それ以外は通常のCLEAR_LIFT_MS
-    return (stage && stage.secret) ? (DRAGON_FREEZE_MS + DRAGON_BLACKOUT_MS + DRAGON_REVEAL_MS) : CLEAR_LIFT_MS;
-  }
+  const SECRET_FREEZE_MS = 520;   // black-screen freeze: the mold is gone here
+  const SECRET_LANTERN_MS = 760;  // lanterns return one by one
+  const SECRET_REVEAL_MS = 1500; // the hidden dragon materializes
+  const SECRET_TOTAL_MS = SECRET_FREEZE_MS + SECRET_LANTERN_MS + SECRET_REVEAL_MS + 650;
 
   // ---- stage shapes ----
   // Every shape is expressed as targetRadius(theta, R): given a canvas-space
@@ -584,29 +581,6 @@
       const off = document.createElement('canvas');
       off.width = THUMB; off.height = THUMB;
       const octx = off.getContext('2d');
-      const stage = STAGES[currentStageIndex];
-      if(stage && stage.secret){
-        // 龍(secret): the live reveal is a timed glow→illustration crossfade,
-        // so screenshotting the canvas could catch it mid-transition. The
-        // keepsake photo instead always composes the finished illustration
-        // fresh, full and unclipped, regardless of animation timing.
-        const stageImg = clearImages['龍'];
-        const bg = octx.createRadialGradient(THUMB*0.5, THUMB*0.5, THUMB*0.05, THUMB*0.5, THUMB*0.5, THUMB*0.75);
-        bg.addColorStop(0, '#241012');
-        bg.addColorStop(0.6, '#0a0714');
-        bg.addColorStop(1, '#000002');
-        octx.fillStyle = bg;
-        octx.fillRect(0, 0, THUMB, THUMB);
-        if(stageImg && stageImg.loaded){
-          const iw = stageImg.img.naturalWidth, ih = stageImg.img.naturalHeight;
-          if(iw && ih){
-            const scale = Math.max(THUMB/iw, THUMB/ih);
-            const dw = iw*scale, dh = ih*scale;
-            octx.drawImage(stageImg.img, THUMB/2 - dw/2, THUMB/2 - dh/2, dw, dh);
-          }
-        }
-        return off.toDataURL('image/jpeg', 0.7);
-      }
       octx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, THUMB, THUMB);
       return off.toDataURL('image/jpeg', 0.55);
     }catch(e){
@@ -852,7 +826,7 @@
       <button class="albumCloseBtn albumDetailClose" id="albumDetailClose">閉じる</button>
       ${photo}
       <div class="albumDetailInfo">
-        <div class="albumDetailName">${rec.name}</div>
+        <div class="albumDetailName">${stage.name}</div>
         <div class="albumCardGrade big ${rec.gradeCls}">${rec.grade}</div>
         <div class="albumDetailStars">${stars}</div>
         <div class="albumDetailRow">クリアタイム: ${rec.time.toFixed(2)}s</div>
@@ -1011,20 +985,8 @@
           <button class="devToggleBtn" data-dev="festivalFrame"></button>
           <button class="devToggleBtn" data-dev="starTip"></button>
           <button class="devToggleBtn" data-dev="unlockAll"></button>
-          <button id="devSecretPreviewBtn" style="display:block;width:100%;margin:8px 0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,120,60,.45);background:rgba(255,120,60,.10);color:#ffb37a;text-align:left;font-size:13px;font-weight:800;">シークレット演出を今すぐ見る</button>
           <button id="devCloseBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:#fbf3df;font-weight:800;">閉じる</button>
         </div>`;
-      developerPanelEl.querySelector('#devSecretPreviewBtn').addEventListener('click', () => {
-        const idx = STAGES.findIndex(s => s.secret);
-        if(idx < 0) return;
-        devSettings.unlockAll = true;
-        saveDevSettings();
-        gameMode = 'hard';
-        developerPanelEl.style.display = 'none';
-        startGame(idx, { skipStats: true, preview: true });
-        // 実際に型抜きさせず、選んだ瞬間にクリア演出(フリーズ→暗転→龍reveal)へ直行
-        requestAnimationFrame(() => clearGame());
-      });
       developerPanelEl.querySelectorAll('.devToggleBtn').forEach(btn => {
         btn.style.cssText = 'display:block;width:100%;margin:8px 0;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,205,120,.25);background:rgba(255,255,255,.055);color:#fbf3df;text-align:left;font-size:13px;font-weight:800;';
         btn.addEventListener('click', () => {
@@ -1460,60 +1422,375 @@
   })();
 
 
+
   // ---- SECRET STAGE: 龍 ----
-  // BUILD 79: the first attempt converted a concave full-body dragon into a
-  // one-radius-per-angle outline, which collapsed into an unreadable blob.
-  // The gameplay engine is radial, so the playable mold is now a purpose-built
-  // star-convex dragon-head crest: long snout, two horns and a flowing mane.
-  // 龍(secret): a coiled dragon medallion — not a literal trace of a
-  // sprawling reference pose, but built the same way as 風鈴/風ぐるま
-  // (a base ring plus named bump()/plateauBump() features). A dragon that
-  // stretches diagonally across the whole canvas can't be captured as a
-  // single-valued radius-per-angle curve (this engine's shapes are all
-  // "one distance per angle from one center"); coiling the body into a
-  // ring — head and mane at top, one leg on each side, tail sweeping back
-  // around to the head — keeps it a valid, playable outline while still
-  // reading as head + mane + legs + tail. 0°=画面右, 時計回り(canvas y-down)。
-  function dragonRadius(theta, Rb){
-    const deg = ((theta * 180 / Math.PI) + 360) % 360;
-    const th = toRad(deg);
-    let ratio = 0.80; // thin coiled body ring
-    ratio += 0.05 * Math.sin(th*2 + toRad(60));  // long, gentle S-undulation
-    ratio += 0.02 * Math.sin(th*4 - toRad(30));
-
-    // head + pointed snout (upper-left)
-    ratio += 0.34 * plateauBump(th, 200, 9, 14);
-    ratio += 0.18 * plateauBump(th, 186, 4, 7);
-    ratio -= 0.07 * bump(th, 214, 5); // shallow throat dip before the mane
-
-    // mane: 6 spikes fanning back from the head
-    const maneAngles = [222,233,244,255,266,277];
-    maneAngles.forEach((a, i) => {
-      const h = 0.30 - i*0.028;
-      ratio += h * plateauBump(th, a, 2, 5);
-    });
-    ratio -= 0.05 * bump(th, 292, 6); // shallow neck dip before the body
-
-    // front leg, 3 short claws
-    const legA = 320;
-    ratio += 0.30 * plateauBump(th, legA, 4, 7);
-    [-4,0,4].forEach(off => { ratio += 0.05 * bump(th, legA+off, 1.6); });
-    ratio -= 0.045 * bump(th, legA-13, 5);
-
-    // back leg, 3 short claws
-    const legB = 345;
-    ratio += 0.24 * plateauBump(th, legB, 4, 6);
-    [-3.5,0,3.5].forEach(off => { ratio += 0.045 * bump(th, legB+off, 1.4); });
-    ratio -= 0.04 * bump(th, legB-12, 5);
-
-    // tail sweeps far out, closing back toward the head; simple 2-3 point fin tip
-    ratio += 0.72 * plateauBump(th, 15, 14, 20);
-    [2,15,28].forEach(a => { ratio += 0.10 * bump(th, a, 3); });
-    ratio -= 0.05 * bump(th, 355, 7);
-    ratio -= 0.04 * bump(th, 178, 5); // closes the ring back toward the snout
-
-    return Rb * ratio;
-  }
+  // BUILD 80: switch the secret stage away from the unreadable radial blob.
+  // The dragon now uses a traced closed-outline silhouette based on the
+  // user's preferred S-curve dragon drawing. Gameplay follows the nearest
+  // point on that outline rather than a single radius-per-angle model, so
+  // the mold can stay recognizably dragon-shaped.
+  const DRAGON_OUTLINE_NORM = [
+  [-0.02715,-0.50000],
+  [-0.04269,-0.49519],
+  [-0.05758,-0.48880],
+  [-0.07179,-0.48077],
+  [-0.08574,-0.47212],
+  [-0.09901,-0.46180],
+  [-0.11205,-0.45096],
+  [-0.12493,-0.43972],
+  [-0.13790,-0.42868],
+  [-0.15086,-0.41764],
+  [-0.16388,-0.40673],
+  [-0.17735,-0.39692],
+  [-0.18085,-0.40207],
+  [-0.17389,-0.41672],
+  [-0.16753,-0.43163],
+  [-0.16273,-0.44717],
+  [-0.16508,-0.46294],
+  [-0.18115,-0.46235],
+  [-0.19467,-0.45267],
+  [-0.20639,-0.43999],
+  [-0.21675,-0.42674],
+  [-0.22619,-0.41312],
+  [-0.23543,-0.39941],
+  [-0.24446,-0.38561],
+  [-0.25407,-0.37206],
+  [-0.26424,-0.35962],
+  [-0.27898,-0.35288],
+  [-0.29294,-0.34423],
+  [-0.30578,-0.33291],
+  [-0.31561,-0.31944],
+  [-0.31946,-0.30350],
+  [-0.32138,-0.28676],
+  [-0.33158,-0.27345],
+  [-0.34455,-0.26241],
+  [-0.35836,-0.25341],
+  [-0.37289,-0.24615],
+  [-0.38710,-0.25226],
+  [-0.40358,-0.25096],
+  [-0.41657,-0.24135],
+  [-0.42285,-0.22641],
+  [-0.42234,-0.20946],
+  [-0.41753,-0.19392],
+  [-0.40831,-0.18020],
+  [-0.39535,-0.16916],
+  [-0.38607,-0.15603],
+  [-0.37514,-0.14415],
+  [-0.36036,-0.13750],
+  [-0.34386,-0.13499],
+  [-0.32688,-0.13558],
+  [-0.31174,-0.14137],
+  [-0.30206,-0.15489],
+  [-0.28910,-0.16594],
+  [-0.27492,-0.17404],
+  [-0.25977,-0.17981],
+  [-0.24303,-0.18173],
+  [-0.22589,-0.18269],
+  [-0.20907,-0.18442],
+  [-0.19358,-0.18934],
+  [-0.17892,-0.19630],
+  [-0.16451,-0.20385],
+  [-0.14777,-0.20577],
+  [-0.13187,-0.20183],
+  [-0.11930,-0.19119],
+  [-0.11369,-0.17598],
+  [-0.11465,-0.15964],
+  [-0.12091,-0.14470],
+  [-0.13003,-0.13094],
+  [-0.14231,-0.11849],
+  [-0.15538,-0.10769],
+  [-0.16893,-0.09808],
+  [-0.18261,-0.08877],
+  [-0.19642,-0.07977],
+  [-0.20995,-0.07009],
+  [-0.22319,-0.05973],
+  [-0.23587,-0.04800],
+  [-0.24788,-0.03600],
+  [-0.25892,-0.02304],
+  [-0.26860,-0.00951],
+  [-0.27692,0.00458],
+  [-0.28320,0.01951],
+  [-0.28869,0.03477],
+  [-0.29253,0.05072],
+  [-0.29446,0.06746],
+  [-0.29542,0.08460],
+  [-0.29446,0.10173],
+  [-0.29963,0.11058],
+  [-0.31113,0.09871],
+  [-0.32409,0.08767],
+  [-0.33903,0.08139],
+  [-0.35565,0.08043],
+  [-0.37171,0.08399],
+  [-0.38552,0.09299],
+  [-0.39350,0.10722],
+  [-0.38091,0.11442],
+  [-0.38084,0.12019],
+  [-0.39357,0.13181],
+  [-0.40119,0.14619],
+  [-0.40407,0.16253],
+  [-0.39868,0.17692],
+  [-0.38391,0.17023],
+  [-0.37322,0.16818],
+  [-0.37330,0.18489],
+  [-0.36751,0.20002],
+  [-0.35326,0.20111],
+  [-0.34358,0.18758],
+  [-0.33157,0.17558],
+  [-0.31706,0.17404],
+  [-0.30391,0.18462],
+  [-0.28956,0.19231],
+  [-0.27282,0.19423],
+  [-0.25605,0.19237],
+  [-0.24405,0.20425],
+  [-0.23109,0.21529],
+  [-0.21784,0.22565],
+  [-0.20402,0.23462],
+  [-0.18967,0.24229],
+  [-0.17453,0.24808],
+  [-0.15923,0.25349],
+  [-0.14317,0.25705],
+  [-0.12670,0.25962],
+  [-0.10993,0.26145],
+  [-0.09274,0.26078],
+  [-0.07569,0.25962],
+  [-0.05895,0.25769],
+  [-0.04260,0.25481],
+  [-0.02626,0.25192],
+  [-0.00913,0.25096],
+  [0.00785,0.25231],
+  [0.02279,0.25859],
+  [0.03343,0.27115],
+  [0.03439,0.28749],
+  [0.02743,0.30215],
+  [0.01639,0.31511],
+  [0.00371,0.32683],
+  [-0.00869,0.33923],
+  [-0.01946,0.35230],
+  [-0.02737,0.36656],
+  [-0.03587,0.37885],
+  [-0.05301,0.37788],
+  [-0.06882,0.37372],
+  [-0.08431,0.36880],
+  [-0.09953,0.36320],
+  [-0.10696,0.34874],
+  [-0.11549,0.33474],
+  [-0.12845,0.32370],
+  [-0.14294,0.31635],
+  [-0.15917,0.31317],
+  [-0.17602,0.31346],
+  [-0.19129,0.31895],
+  [-0.20510,0.32795],
+  [-0.21176,0.34272],
+  [-0.19773,0.34904],
+  [-0.18789,0.35288],
+  [-0.20264,0.35962],
+  [-0.21561,0.37038],
+  [-0.22406,0.38441],
+  [-0.22811,0.40027],
+  [-0.22400,0.41538],
+  [-0.20886,0.41152],
+  [-0.19449,0.40388],
+  [-0.18869,0.40933],
+  [-0.19253,0.42527],
+  [-0.19157,0.44241],
+  [-0.18358,0.45607],
+  [-0.16932,0.45083],
+  [-0.15896,0.43758],
+  [-0.14668,0.42626],
+  [-0.13166,0.42019],
+  [-0.11653,0.42600],
+  [-0.10296,0.43558],
+  [-0.08892,0.44400],
+  [-0.07426,0.45096],
+  [-0.05792,0.45385],
+  [-0.04078,0.45481],
+  [-0.02325,0.45481],
+  [-0.00833,0.46113],
+  [0.00463,0.47217],
+  [0.01860,0.48077],
+  [0.03337,0.48745],
+  [0.04890,0.49231],
+  [0.06484,0.49615],
+  [0.08156,0.49813],
+  [0.09832,0.50000],
+  [0.11546,0.49904],
+  [0.13256,0.49799],
+  [0.14893,0.49519],
+  [0.16488,0.49135],
+  [0.18074,0.48730],
+  [0.19597,0.48173],
+  [0.21111,0.47596],
+  [0.22586,0.46923],
+  [0.24021,0.46154],
+  [0.25428,0.45318],
+  [0.26809,0.44418],
+  [0.28133,0.43382],
+  [0.29402,0.42210],
+  [0.30602,0.41010],
+  [0.31706,0.39714],
+  [0.32742,0.38390],
+  [0.33631,0.37005],
+  [0.34400,0.35570],
+  [0.35074,0.34095],
+  [0.35650,0.32580],
+  [0.36131,0.31026],
+  [0.36442,0.29401],
+  [0.36730,0.27767],
+  [0.36900,0.26084],
+  [0.36997,0.24370],
+  [0.36997,0.22616],
+  [0.37189,0.20943],
+  [0.38218,0.19712],
+  [0.39551,0.18696],
+  [0.40655,0.17399],
+  [0.41487,0.15990],
+  [0.41997,0.14448],
+  [0.42285,0.12814],
+  [0.42285,0.11060],
+  [0.42189,0.09346],
+  [0.41191,0.08365],
+  [0.39973,0.09523],
+  [0.39073,0.10904],
+  [0.38727,0.09601],
+  [0.38439,0.07967],
+  [0.38054,0.06373],
+  [0.37670,0.04779],
+  [0.37477,0.03105],
+  [0.37610,0.01406],
+  [0.37958,-0.00204],
+  [0.36697,-0.00673],
+  [0.35222,0.00000],
+  [0.33911,0.01067],
+  [0.32806,0.02363],
+  [0.31997,0.03782],
+  [0.31346,0.05266],
+  [0.30843,0.06811],
+  [0.30430,0.08394],
+  [0.29734,0.08218],
+  [0.29400,0.06602],
+  [0.28076,0.06901],
+  [0.27244,0.08310],
+  [0.26708,0.09842],
+  [0.26420,0.11476],
+  [0.26420,0.13230],
+  [0.26804,0.14824],
+  [0.27381,0.16339],
+  [0.28276,0.17722],
+  [0.29380,0.19018],
+  [0.30362,0.20365],
+  [0.30554,0.22039],
+  [0.30362,0.23713],
+  [0.29964,0.25302],
+  [0.29400,0.26822],
+  [0.28640,0.28261],
+  [0.27766,0.29653],
+  [0.26703,0.30966],
+  [0.25463,0.32207],
+  [0.24139,0.33243],
+  [0.22730,0.34075],
+  [0.21264,0.34771],
+  [0.19645,0.35096],
+  [0.18052,0.34709],
+  [0.17381,0.33233],
+  [0.17670,0.31599],
+  [0.18119,0.30031],
+  [0.18535,0.28450],
+  [0.18824,0.26816],
+  [0.18920,0.25102],
+  [0.18920,0.23348],
+  [0.18631,0.21714],
+  [0.18195,0.20141],
+  [0.17574,0.18645],
+  [0.16735,0.17239],
+  [0.15699,0.15914],
+  [0.14499,0.14714],
+  [0.13146,0.13746],
+  [0.11737,0.12913],
+  [0.10243,0.12285],
+  [0.08719,0.11731],
+  [0.07125,0.11346],
+  [0.05491,0.11058],
+  [0.03777,0.10962],
+  [0.02063,0.10865],
+  [0.00349,0.10962],
+  [-0.01325,0.11154],
+  [-0.02999,0.11346],
+  [-0.04672,0.11538],
+  [-0.06386,0.11635],
+  [-0.08100,0.11538],
+  [-0.09622,0.10978],
+  [-0.10792,0.09765],
+  [-0.11176,0.08171],
+  [-0.10819,0.06565],
+  [-0.10055,0.05128],
+  [-0.09018,0.03804],
+  [-0.07778,0.02563],
+  [-0.06482,0.01459],
+  [-0.05173,0.00385],
+  [-0.03833,-0.00613],
+  [-0.02480,-0.01581],
+  [-0.01155,-0.02617],
+  [0.00141,-0.03721],
+  [0.01409,-0.04894],
+  [0.02514,-0.06190],
+  [0.03482,-0.07543],
+  [0.04208,-0.08996],
+  [0.04806,-0.10502],
+  [0.05638,-0.10974],
+  [0.06538,-0.09593],
+  [0.07907,-0.10045],
+  [0.08343,-0.11619],
+  [0.08535,-0.13293],
+  [0.08439,-0.15007],
+  [0.08150,-0.16641],
+  [0.07654,-0.18189],
+  [0.07026,-0.19682],
+  [0.07260,-0.20673],
+  [0.08854,-0.20288],
+  [0.10329,-0.19615],
+  [0.11860,-0.19383],
+  [0.12093,-0.21040],
+  [0.11613,-0.22595],
+  [0.10917,-0.24061],
+  [0.09881,-0.25385],
+  [0.08612,-0.26557],
+  [0.07231,-0.27458],
+  [0.05814,-0.28269],
+  [0.04385,-0.29054],
+  [0.03874,-0.29954],
+  [0.05395,-0.30514],
+  [0.06924,-0.31058],
+  [0.08343,-0.31730],
+  [0.07811,-0.33128],
+  [0.06434,-0.34038],
+  [0.04920,-0.34615],
+  [0.03325,-0.35000],
+  [0.01651,-0.35192],
+  [-0.00102,-0.35192],
+  [-0.01856,-0.35192],
+  [-0.02212,-0.35673],
+  [-0.00856,-0.36635],
+  [0.00403,-0.37829],
+  [0.01303,-0.39210],
+  [0.01516,-0.40796],
+  [-0.00089,-0.41058],
+  [-0.01763,-0.40865],
+  [-0.03366,-0.40503],
+  [-0.04944,-0.40079],
+  [-0.06466,-0.39519],
+  [-0.08016,-0.39026],
+  [-0.09535,-0.38462],
+  [-0.09704,-0.38973],
+  [-0.08436,-0.40145],
+  [-0.07196,-0.41385],
+  [-0.05927,-0.42557],
+  [-0.04631,-0.43661],
+  [-0.03363,-0.44833],
+  [-0.02094,-0.46005],
+  [-0.00922,-0.47274],
+  [-0.00119,-0.48695],
+  [-0.00996,-0.49916],
+];
 
   // PROJECT ENNICHI 第一弾: 縁日
   const STAGES = [
@@ -1527,7 +1804,7 @@
     { name:'りんご飴', key:'ringoame',   shapeFn:candyAppleRadius, fill:'210,30,25',  difficulty:3 },
     { name:'風ぐるま', key:'kazaguruma', shapeFn:pinwheelRadius,   fill:'255,205,60', difficulty:4 },
     { name:'金魚',     key:'kingyo',     shapeFn:goldfishRadius,   fill:'255,120,70', difficulty:5 },
-    { name:'龍',       key:'dragon',     shapeFn:dragonRadius,     fill:'255,165,45', difficulty:5, secret:true }
+    { name:'SECRET STAGE', key:'dragon', shapeFn:(th,Rb)=>Rb, outlinePts:DRAGON_OUTLINE_NORM, fill:'255,165,45', difficulty:5, secret:true, revealText:'ドラゴンが現れた！！' }
   ];
 
   // ---- clear-scene image assets ----
@@ -1565,8 +1842,7 @@
     'わたがし': { cxImg: 511.6, cyImg: 740.5, rImg: 418.2 },
     '水風船': { cxImg: 511.9, cyImg: 800.8, rImg: 389.3 },
     '金魚': { cxImg: 530.8, cyImg: 692.3, rImg: 345.9 },
-    '風鈴': { cxImg: 511.1, cyImg: 436.3, rImg: 236.5 },
-    '龍': { cxImg: 661.4, cyImg: 691.6, rImg: 480 }
+    '風鈴': { cxImg: 511.1, cyImg: 436.3, rImg: 236.5 }
   };
 
   // Draw an image "cover"-fit (like CSS background-size:cover) into a square
@@ -1600,33 +1876,47 @@
   let plateEdgePath = null;
   let shapePts = [];
   let shapePath = null;
+  let shapeIsOutline = false;
+  let plateEdgePts = [];
 
   function buildStageCache(){
     const stage = STAGES[currentStageIndex];
     shapePts = [];
     shapePath = new Path2D();
+    shapeIsOutline = !!stage.outlinePts;
+    plateEdgePts = [];
     let maxR = 0;
-    for(let i = 0; i < N_BUCKETS; i++){
-      const a = (i / N_BUCKETS) * Math.PI * 2;
-      const r = stage.shapeFn(a, R);
-      targetRCache[i] = r;
-      if(r > maxR) maxR = r;
-      const x = cx + r * Math.cos(a);
-      const y = cy + r * Math.sin(a);
-      shapePts.push({x, y});
-      if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
+
+    if(shapeIsOutline){
+      const scale = R * 2.0;
+      stage.outlinePts.forEach((pt, i) => {
+        const x = cx + pt[0] * scale;
+        const y = cy + pt[1] * scale;
+        const r = Math.hypot(x - cx, y - cy);
+        targetRCache[i] = r;
+        if(r > maxR) maxR = r;
+        shapePts.push({x, y});
+        if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
+      });
+      shapePath.closePath();
+    }else{
+      for(let i = 0; i < N_BUCKETS; i++){
+        const a = (i / N_BUCKETS) * Math.PI * 2;
+        const r = stage.shapeFn(a, R);
+        targetRCache[i] = r;
+        if(r > maxR) maxR = r;
+        const x = cx + r * Math.cos(a);
+        const y = cy + r * Math.sin(a);
+        shapePts.push({x, y});
+        if(i === 0) shapePath.moveTo(x, y); else shapePath.lineTo(x, y);
+      }
+      shapePath.closePath();
     }
-    shapePath.closePath();
-    // The candy sits centered and large, with the shape resting inside it.
-    // A squircle's farthest axis-aligned reach is exactly S, at the flat
-    // edge midpoint (the corners, despite being radially farther, project
-    // to a *smaller* x/y extent) — so the only real constraint is S itself
-    // staying under the canvas half-width. Start from a generous rim
-    // thickness and shrink it only if that would run past the edge.
+
     const maxEdge = W*0.48;
     let S = maxR + safeBand + W*0.09;
     if(S > maxEdge) S = maxEdge;
-    S = Math.max(S, maxR + safeBand + W*0.01); // last-resort: never clip the shape
+    S = Math.max(S, maxR + safeBand + W*0.01);
     plateR = S;
     plateEdgePath = new Path2D();
     for(let i = 0; i < N_BUCKETS; i++){
@@ -1634,6 +1924,7 @@
       const er = squircleRadius(a, plateR, PLATE_SQUIRCLE_N);
       plateEdgeCache[i] = er;
       const x = cx + er * Math.cos(a), y = cy + er * Math.sin(a);
+      plateEdgePts.push({x, y});
       if(i === 0) plateEdgePath.moveTo(x, y); else plateEdgePath.lineTo(x, y);
     }
     plateEdgePath.closePath();
@@ -1700,7 +1991,7 @@
         '<span class="num">' + (s.secret ? 'S' : (i+1)) + '</span>' +
         '<canvas class="thumb"></canvas>' +
         '<span class="stageInfo">' +
-          '<span class="stageName">' + (s.secret ? 'シークレットステージ' : s.name) + '</span>' +
+          '<span class="stageName">' + s.name + '</span>' +
           '<span class="stageStars">' + stars + '</span>' +
           '<span class="stageBestTime">BEST ' + bestTime + '</span>' +
           lockLine +
@@ -1853,7 +2144,7 @@
   let liftTiltSign = 1;
   let liftTriggered = false;
   let celebTriggered = false;
-  let freezeTriggered = false; // 龍(secret) だけ: フリーズ演出のクリック/振動を1回だけ鳴らす
+  let secretRevealSoundTriggered = false;
   let fireworks = [];
   let dust = [];
   let chipFrags = []; // small candy-shell fragments flying off as it's scraped
@@ -1862,8 +2153,6 @@
   const EROSION_DONE = 0.97;   // treat a bucket as fully cleared past this
   let sessionFailCount = 0;    // fails since this stage was last freshly picked (survives retries)
   let albumSaved = false;      // guards against saving the same clear twice
-  let devPreviewRun = false;   // true only for the dev-panel "シークレット演出を今すぐ見る" shortcut — skips markStageCleared/saveToAlbum/stat bumps
-  let dragonImgMissingWarned = false; // one-shot toast if clear_dragon.png never loaded
 
 
   // ---- BUILD 57: fair input tracking ----
@@ -1982,6 +2271,53 @@
     }
   }
 
+  // Secret-stage shutdown: a tiny high click followed by a fast low drop.
+  // It is intentionally short, like a slot-machine freeze "プチュン" rather
+  // than an explosion. The screen goes completely black on the same frame.
+  function playSecretFreezeSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const click = audioCtx.createOscillator();
+    click.type = 'square';
+    click.frequency.setValueAtTime(1750, now);
+    click.frequency.exponentialRampToValueAtTime(220, now + 0.075);
+    const cg = audioCtx.createGain();
+    cg.gain.setValueAtTime(0.0001, now);
+    cg.gain.exponentialRampToValueAtTime(0.18, now + 0.005);
+    cg.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    click.connect(cg); cg.connect(audioCtx.destination);
+    click.start(now); click.stop(now + 0.10);
+
+    if(noiseBuffer){
+      const src = audioCtx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const hp = audioCtx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = 4200;
+      const ng = audioCtx.createGain();
+      ng.gain.setValueAtTime(0.08, now);
+      ng.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+      src.connect(hp); hp.connect(ng); ng.connect(audioCtx.destination);
+      src.start(now); src.stop(now + 0.05);
+    }
+  }
+
+  function playSecretRevealSound(){
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    [196, 293.66, 440, 659.25].forEach((freq, i) => {
+      const t0 = now + i*0.095;
+      const osc = audioCtx.createOscillator();
+      osc.type = i < 2 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, t0);
+      const g = audioCtx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.12, t0 + 0.025);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.72);
+      osc.connect(g); g.connect(audioCtx.destination);
+      osc.start(t0); osc.stop(t0 + 0.75);
+    });
+  }
+
   // A couple of simple firework bursts for the festival celebration —
   // short radiating streaks that expand and fade, nothing elaborate.
   function spawnFireworks(cx0, cy0, now){
@@ -2032,7 +2368,7 @@
     clearPhaseStart = null;
     liftTriggered = false;
     celebTriggered = false;
-    freezeTriggered = false;
+    secretRevealSoundTriggered = false;
     fireworks = [];
     dust = [];
     chipFrags = [];
@@ -2059,7 +2395,7 @@
   }
 
   let lastStageIndexStarted = -1;
-  function startGame(stageIndex, opts){
+  function startGame(stageIndex){
     if(typeof stageIndex === 'number' && !isStageUnlocked(stageIndex, gameMode)){
       showDebugToast(unlockMessage(stageIndex, gameMode));
       return;
@@ -2068,9 +2404,8 @@
       cancelAnimationFrame(rafId);
       rafId = null;
     }
-    devPreviewRun = !!(opts && opts.preview);
     if(typeof stageIndex === 'number'){
-      if(stageIndex !== lastStageIndexStarted && !(opts && opts.skipStats)){
+      if(stageIndex !== lastStageIndexStarted){
         sessionFailCount = 0;
         profile.totalPlays++;
         addXP(5);
@@ -2082,7 +2417,7 @@
     buildStageCache();
     resetGame();
     mode = 'playing';
-    needleName.textContent = STAGES[currentStageIndex].secret ? 'シークレットステージ' : STAGES[currentStageIndex].name;
+    needleName.textContent = STAGES[currentStageIndex].name;
     showScreen(null);
     hud.classList.remove('hidden');
     legend.classList.remove('hidden');
@@ -2274,11 +2609,16 @@
     // though the actual judged state has already become red.
     draw();
     failSnapshot = captureFailSnapshot();
-    const fdx = x - cx, fdy = y - cy;
-    const fdist = Math.hypot(fdx, fdy);
-    const fdeg = ((Math.atan2(fdy, fdx) * 180 / Math.PI) + 360) % 360;
-    const fbucket = Math.round(fdeg) % N_BUCKETS;
-    failDepth = Math.max(0, targetRCache[fbucket] - fdist);
+    if(shapeIsOutline){
+      const finfo = getOutlineJudgeInfo({x, y});
+      failDepth = finfo.inside ? finfo.dist : 0;
+    }else{
+      const fdx = x - cx, fdy = y - cy;
+      const fdist = Math.hypot(fdx, fdy);
+      const fdeg = ((Math.atan2(fdy, fdx) * 180 / Math.PI) + 360) % 360;
+      const fbucket = Math.round(fdeg) % N_BUCKETS;
+      failDepth = Math.max(0, targetRCache[fbucket] - fdist);
+    }
     failCracks = [];
     for(let i = 0; i < 7; i++){
       failCracks.push({
@@ -2305,28 +2645,50 @@
 
   function clearGame(){
     mode = 'clearReveal';
-    if(!devPreviewRun) markStageCleared(STAGES[currentStageIndex].key);
+    const stage = STAGES[currentStageIndex];
+    const isSecret = !!stage.secret;
+    markStageCleared(stage.key);
     needle = null;
     handlePos = null;
     clearPhaseStart = performance.now();
     liftTriggered = false;
     celebTriggered = false;
-    freezeTriggered = false;
-    dragonImgMissingWarned = false;
+    secretRevealSoundTriggered = false;
     albumSaved = false;
     fireworks = [];
     dust = [];
+    chipFrags = [];
+    shards = [];
     liftTiltSign = Math.random() < 0.5 ? -1 : 1;
     hud.classList.add('hidden');
     legend.classList.add('hidden');
     carveHelpBtn.style.display = 'none';
+
+    if(isSecret){
+      // The freeze is a genuine scene cut, not a layer over the finished mold.
+      // Clear all carving visuals immediately so no silhouette can leak into
+      // the dragon reveal or the album snapshot.
+      erosion.fill(0);
+      lastErodeAt.fill(0);
+      cutAccum.fill(0);
+      fullyEroded.fill(0);
+      erodedCount = 0;
+      currentState = null;
+      lastRawTip = null;
+      strokeActive = false;
+      strokeHasCarved = false;
+      playSecretFreezeSound();
+      vibrate([0, 16, 45, 10]);
+    }
+
+    const wait = isSecret ? SECRET_TOTAL_MS : (CLEAR_PAUSE_MS + CLEAR_LIFT_MS + CELEBRATION_MS);
     setTimeout(() => {
       mode = 'clear';
       clearTimeEl.textContent = elapsed.toFixed(2) + 's';
       const isLast = currentStageIndex === STAGES.length - 1;
       nextBtn.textContent = isLast ? 'さいしょのステージへ' : 'つぎのステージへ';
       showScreen(clearScreen);
-    }, CLEAR_PAUSE_MS + liftPhaseMs(STAGES[currentStageIndex]) + CELEBRATION_MS);
+    }, wait);
   }
 
   // ---- input ----
@@ -2384,10 +2746,181 @@
     processInterpolatedMove(rawTip);
   }
 
+  function pointInPolygon(x, y, pts){
+    let inside = false;
+    for(let i = 0, j = pts.length - 1; i < pts.length; j = i++){
+      const xi = pts[i].x, yi = pts[i].y;
+      const xj = pts[j].x, yj = pts[j].y;
+      const intersect = ((yi > y) !== (yj > y)) &&
+        (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi);
+      if(intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function nearestPointOnSegment(px, py, ax, ay, bx, by){
+    const abx = bx - ax, aby = by - ay;
+    const ab2 = abx*abx + aby*aby;
+    let t = ab2 > 1e-6 ? ((px - ax)*abx + (py - ay)*aby) / ab2 : 0;
+    if(t < 0) t = 0;
+    if(t > 1) t = 1;
+    const x = ax + abx * t;
+    const y = ay + aby * t;
+    const dx = px - x, dy = py - y;
+    return { x, y, t, dist2: dx*dx + dy*dy };
+  }
+
+  function getOutlineJudgeInfo(pt){
+    let best = { dist2: Infinity, bucket: 0, x: cx, y: cy };
+    for(let i = 0; i < shapePts.length; i++){
+      const a = shapePts[i];
+      const b = shapePts[(i + 1) % shapePts.length];
+      const hit = nearestPointOnSegment(pt.x, pt.y, a.x, a.y, b.x, b.y);
+      if(hit.dist2 < best.dist2){
+        const bucket = (Math.round(i + hit.t) + N_BUCKETS) % N_BUCKETS;
+        best = { dist2: hit.dist2, bucket, x: hit.x, y: hit.y };
+      }
+    }
+    const inside = pointInPolygon(pt.x, pt.y, shapePts);
+    return {
+      bucket: best.bucket,
+      closest: { x: best.x, y: best.y },
+      dist: Math.sqrt(best.dist2),
+      inside
+    };
+  }
+
+  function spawnChipFragmentOutline(bucket, now, point){
+    const next = shapePts[(bucket + 1) % N_BUCKETS] || point;
+    const tx = next.x - point.x, ty = next.y - point.y;
+    const len = Math.hypot(tx, ty) || 1;
+    let nx = -ty / len, ny = tx / len;
+    if(pointInPolygon(point.x + nx * 6, point.y + ny * 6, shapePts)){
+      nx *= -1; ny *= -1;
+    }
+    const n = 1 + (Math.random() < 0.4 ? 1 : 0);
+    for(let k = 0; k < n; k++){
+      chipFrags.push({
+        x: point.x, y: point.y,
+        vx: nx * (W*0.05 + Math.random()*W*0.05) + (Math.random()-0.5)*W*0.03,
+        vy: ny * (W*0.05 + Math.random()*W*0.05) + (Math.random()-0.5)*W*0.03,
+        size: W*0.005 + Math.random()*W*0.006,
+        born: now
+      });
+    }
+  }
+
+  function applyOutlineSnap(rawTip, closest, magnetRange, snapStrength, maxInside){
+    const dx = closest.x - rawTip.x;
+    const dy = closest.y - rawTip.y;
+    const dist = Math.hypot(dx, dy);
+    let tip = { x: rawTip.x, y: rawTip.y };
+    if(dist <= magnetRange){
+      const proximity = 1 - dist / magnetRange;
+      const amt = proximity * proximity * snapStrength;
+      tip = { x: rawTip.x + dx * amt, y: rawTip.y + dy * amt };
+    }
+    if(typeof maxInside === 'number' && pointInPolygon(tip.x, tip.y, shapePts)){
+      const inDx = tip.x - closest.x, inDy = tip.y - closest.y;
+      const inDist = Math.hypot(inDx, inDy) || 1;
+      if(inDist > maxInside){
+        tip = { x: closest.x + inDx / inDist * maxInside, y: closest.y + inDy / inDist * maxInside };
+      }
+    }
+    return tip;
+  }
+
+  function handleMoveOutline(rawTip, cfg){
+    const info = getOutlineJudgeInfo(rawTip);
+    const rawDiff = info.inside ? -info.dist : info.dist;
+
+    if(rawDiff < -cfg.innerFail){
+      needle = rawTip;
+      if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
+      gameOver(rawTip.x, rawTip.y);
+      return;
+    }
+
+    if(typeof cfg.innerWarnOnly === 'number' && rawDiff < -cfg.innerWarnOnly){
+      needle = rawTip;
+      if(currentState !== 'yellow'){
+        currentState = 'yellow';
+        vibrate(5);
+      }
+      return;
+    }
+
+    const tip = applyOutlineSnap(rawTip, info.closest, cfg.magnetRange, cfg.snapStrength, cfg.clampInside);
+    needle = tip;
+    const tipInfo = getOutlineJudgeInfo(tip);
+    const diff = tipInfo.inside ? -tipInfo.dist : tipInfo.dist;
+
+    const newState = diff >= -cfg.greenInner && diff <= cfg.greenOuter ? 'green' : 'yellow';
+    if(newState !== currentState){
+      currentState = newState;
+      vibrate(newState === 'green' ? [0,12] : 5);
+    }
+    if(newState !== 'green') return;
+
+    const now = performance.now();
+    let scraped = false;
+    const bucket = tipInfo.bucket;
+    const offsets = cfg.offsets(bucket);
+    if(cfg.trackDirection){
+      let moveDir = 1;
+      if(lastEasyBucket !== null){
+        let delta = bucket - lastEasyBucket;
+        if(delta > N_BUCKETS/2) delta -= N_BUCKETS;
+        if(delta < -N_BUCKETS/2) delta += N_BUCKETS;
+        if(delta < 0) moveDir = -1;
+      }
+      lastEasyBucket = bucket;
+      offsets.splice(0, offsets.length, ...(moveDir > 0 ? cfg.forwardOffsets : cfg.backwardOffsets));
+    }
+    for(const i of offsets){
+      const b = (bucket + i + N_BUCKETS) % N_BUCKETS;
+      if(now - lastErodeAt[b] < EROSION_TICK_MS) continue;
+      lastErodeAt[b] = now;
+      const wasDone = erosion[b] >= EROSION_DONE;
+      erosion[b] = 1;
+      scraped = true;
+      strokeHasCarved = true;
+      if(!wasDone && !fullyEroded[b]){
+        fullyEroded[b] = 1;
+        erodedCount++;
+      }
+      const emitChance = cfg.fragmentChance(i);
+      if(Math.random() < emitChance) spawnChipFragmentOutline(b, now, shapePts[b]);
+    }
+    if(!scraped) return;
+    updateProgress();
+    if(now - lastScratchAt > cfg.scratchGap){ lastScratchAt = now; playScratch(); vibrate(4); }
+    if(now - lastChipBreakAt > cfg.breakGap){ lastChipBreakAt = now; playChipBreak(); }
+    if(erodedCount >= N_BUCKETS){
+      elapsed = (performance.now() - startTime) / 1000;
+      clearGame();
+    }
+  }
+
   // ハードモード: BUILD 72 makes the former NORMAL judgment the new HARD.
   // It still offers a small visual magnet so the trace remains readable, but
   // the inward tolerance is narrow and any deeper breach turns red and fails.
   function handleMoveHard(rawTip){
+    if(shapeIsOutline){
+      return handleMoveOutline(rawTip, {
+        innerFail: safeBand * 0.42,
+        innerWarnOnly: 0,
+        magnetRange: safeBand * 2.2,
+        snapStrength: 0.52,
+        clampInside: null,
+        greenInner: 0,
+        greenOuter: safeBand,
+        offsets: ()=>[0],
+        fragmentChance: (i)=>(i === 0 ? 0.30 : 0.12),
+        scratchGap: 82,
+        breakGap: 240
+      });
+    }
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
     if(dist0 < 0.001){ needle = rawTip; return; }
@@ -2397,11 +2930,7 @@
     const rawDiff = dist0 - targetR;
 
     const isPinwheel = STAGES[currentStageIndex].key === 'kazaguruma';
-    // 龍(secret): playable difficulty sits between NORMAL and HARD — a long,
-    // deliberate line to trace rather than a punishing one. Widen the inward
-    // fail margin, magnet pull, and outward green band versus stock HARD.
-    const isDragonSecret = STAGES[currentStageIndex].key === 'dragon';
-    const innerFail = safeBand * (isPinwheel ? 0.62 : isDragonSecret ? 0.70 : 0.42);
+    const innerFail = safeBand * (isPinwheel ? 0.62 : 0.42);
     if(rawDiff < -innerFail){
       needle = rawTip;
       if(currentState !== 'red'){ currentState = 'red'; vibrate(40); }
@@ -2417,7 +2946,7 @@
       return;
     }
 
-    const magnetRange = safeBand * (isDragonSecret ? 2.5 : 2.2);
+    const magnetRange = safeBand * 2.2;
     let snappedDist = dist0;
     if(rawDiff <= magnetRange){
       const proximity = 1 - rawDiff / magnetRange;
@@ -2425,7 +2954,7 @@
     }
     const tip = { x: cx + dx0/dist0*snappedDist, y: cy + dy0/dist0*snappedDist };
     needle = tip;
-    const newState = (snappedDist - targetR <= safeBand * (isDragonSecret ? 1.15 : 1)) ? 'green' : 'yellow';
+    const newState = (snappedDist - targetR <= safeBand) ? 'green' : 'yellow';
     if(newState !== currentState){
       currentState = newState;
       vibrate(newState === 'green' ? [0,12] : 5);
@@ -2461,6 +2990,23 @@
   // snaps toward the mold's outline, with forgiving room on both sides of
   // the line, and a shallow dip inside still only warns before it fails.
   function handleMoveEasy(rawTip){
+    if(shapeIsOutline){
+      return handleMoveOutline(rawTip, {
+        innerFail: safeBand * 1.05,
+        magnetRange: safeBand * 2.5,
+        snapStrength: 0.56,
+        clampInside: safeBand * 0.42,
+        greenInner: safeBand * 0.42,
+        greenOuter: safeBand * 1.15,
+        offsets: ()=>[],
+        trackDirection: true,
+        forwardOffsets: [-1,0,1,2],
+        backwardOffsets: [-2,-1,0,1],
+        fragmentChance: (i)=>(i === 0 ? 0.30 : Math.abs(i) === 1 ? 0.16 : 0.08),
+        scratchGap: 88,
+        breakGap: 260
+      });
+    }
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
     if(dist0 < 0.001){ needle = rawTip; return; }
@@ -2543,6 +3089,21 @@
   // NORMAL. It allows a small inward green corridor, gives a wider yellow
   // warning zone before failure, and uses slightly stronger magnet support.
   function handleMoveNormal(rawTip){
+    if(shapeIsOutline){
+      return handleMoveOutline(rawTip, {
+        innerFail: safeBand * 1.00,
+        innerWarnOnly: safeBand * 0.32,
+        magnetRange: safeBand * 2.65,
+        snapStrength: 0.60,
+        clampInside: safeBand * 0.32,
+        greenInner: safeBand * 0.32,
+        greenOuter: safeBand * 1.20,
+        offsets: ()=>[-1,0,1],
+        fragmentChance: (i)=>(i === 0 ? 0.30 : 0.16),
+        scratchGap: 84,
+        breakGap: 245
+      });
+    }
     const dx0 = rawTip.x - cx, dy0 = rawTip.y - cy;
     const dist0 = Math.hypot(dx0, dy0);
     if(dist0 < 0.001){ needle = rawTip; return; }
@@ -2845,18 +3406,25 @@
     const now = performance.now();
     const isShattering = mode === 'gameover' && shards.length > 0;
     const isDragonSecret = STAGES[currentStageIndex] && STAGES[currentStageIndex].secret;
-    const liftDur = liftPhaseMs(STAGES[currentStageIndex]);
+
+    // The secret clear is a hard scene cut. Return here so the candy mold,
+    // shapePath, green trace, fragments and normal lift animation cannot be
+    // painted over the dragon reveal.
+    if(isDragonSecret && clearPhaseStart !== null && mode === 'clearReveal'){
+      drawSecretFreezeReveal(now - clearPhaseStart, now);
+      return;
+    }
 
     // ---- clear "detach" timeline ----
     let liftProgress = 0; // 0..1 across the lift phase only (pause phase = 0)
     if(clearPhaseStart !== null){
       const t = now - clearPhaseStart;
       if(t > CLEAR_PAUSE_MS){
-        liftProgress = Math.min(1, (t - CLEAR_PAUSE_MS) / liftDur);
+        liftProgress = Math.min(1, (t - CLEAR_PAUSE_MS) / CLEAR_LIFT_MS);
       }
     }
     const liftEase = 1 - Math.pow(1 - liftProgress, 3); // ease-out cubic
-    if(liftProgress > 0 && !liftTriggered && !isDragonSecret){
+    if(liftProgress > 0 && !liftTriggered){
       liftTriggered = true;
       playDetachClick();
       vibrate(16);
@@ -2866,7 +3434,7 @@
     // ---- festival celebration timeline (starts once the lift finishes) ----
     let celebT = 0;
     if(clearPhaseStart !== null){
-      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + liftDur);
+      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
       if(tSinceLift > 0) celebT = Math.min(1, tSinceLift / 900);
     }
     if(celebT > 0 && !celebTriggered){
@@ -2881,12 +3449,10 @@
       albumSaved = true;
       // wait one frame so this fully-lit frame (fireworks included) has
       // actually been painted before we grab it as the keepsake image
-      if(!devPreviewRun){
-        requestAnimationFrame(() => {
-          try{ saveToAlbum(); }
-          catch(e){ showDebugToast('save trigger failed: ' + (e && e.message ? e.message : e)); }
-        });
-      }
+      requestAnimationFrame(() => {
+        try{ saveToAlbum(); }
+        catch(e){ showDebugToast('save trigger failed: ' + (e && e.message ? e.message : e)); }
+      });
     }
     // gentle float once the piece is fully lifted and the festival opens up
     const celebBob = celebT > 0 ? Math.sin(now / 420) * W*0.012 * celebT : 0;
@@ -2899,38 +3465,11 @@
     ctx.scale(zoomScale, zoomScale);
     ctx.translate(-cx, -cy);
 
-    // 龍(secret): PAUSE の間は他ステージと同じく完成した削り跡をそのまま見せ、
-    // PAUSE が終わった瞬間にパチスロのフリーズ風の暗転カットを挟み、そのあと
-    // 何も映らない完全な暗転を1秒はさんでから、型抜きの枠を使わずに龍の
-    // イラストそのものをフルで浮かび上がらせる。
-    const tSincePhaseStart = clearPhaseStart !== null ? (now - clearPhaseStart) : -1;
-    const inSecretFreezeOrReveal = isDragonSecret && clearPhaseStart !== null && tSincePhaseStart > CLEAR_PAUSE_MS;
-    if(inSecretFreezeOrReveal){
-      const freezeT = (tSincePhaseStart - CLEAR_PAUSE_MS) / DRAGON_FREEZE_MS;
-      if(freezeT < 1){
-        if(!freezeTriggered){
-          freezeTriggered = true;
-          playDetachClick();
-          vibrate([0, 10, 30, 40]);
-          // 内部的にここで型抜き画像(削り跡データ)をリセットする
-          erosion.fill(0);
-          fullyEroded.fill(0);
-          erodedCount = 0;
-        }
-        drawDragonShutdownFreeze(Math.min(1, Math.max(0, freezeT)));
-      } else {
-        const tAfterFreeze = tSincePhaseStart - CLEAR_PAUSE_MS - DRAGON_FREEZE_MS;
-        if(tAfterFreeze < DRAGON_BLACKOUT_MS){
-          // 型抜きデザインもろとも何も描かない、完全な暗転の間
-          ctx.save();
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, W, H);
-          ctx.restore();
-        } else {
-          const revealT2 = Math.min(1, (tAfterFreeze - DRAGON_BLACKOUT_MS) / DRAGON_REVEAL_MS);
-          drawDragonSecretBackdrop(revealT2, celebT, now, true);
-        }
-      }
+    const secretRevealT = clearPhaseStart !== null
+      ? Math.min(1, Math.max(0, (now - clearPhaseStart) / (CLEAR_PAUSE_MS + CLEAR_LIFT_MS)))
+      : 0;
+    if(isDragonSecret && clearPhaseStart !== null){
+      drawDragonSecretBackdrop(secretRevealT, celebT, now);
     } else if(celebT > 0){
       drawFestivalScene(celebT, now);
     } else {
@@ -2967,41 +3506,75 @@
         if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
         const a0 = (i / N_BUCKETS) * Math.PI * 2;
         const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx + innerR*Math.cos(a0), cy + innerR*Math.sin(a0));
-        ctx.lineTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
-        ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
-        ctx.lineTo(cx + innerR*Math.cos(a1), cy + innerR*Math.sin(a1));
-        ctx.arc(cx, cy, innerR, a1, a0, true);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-        if(outerR < edgeR - 1){
-          // a crumbling wedge shows a rougher, darker broken edge
-          ctx.lineWidth = 1.5;
-          ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+        if(shapeIsOutline){
+          const p0 = shapePts[i];
+          const p1 = shapePts[(i + 1) % N_BUCKETS];
+          const edge0 = plateEdgePts[i];
+          const edge1 = plateEdgePts[(i + 1) % N_BUCKETS];
+          const outer0 = { x: p0.x + (edge0.x - p0.x) * (1 - visualErosion), y: p0.y + (edge0.y - p0.y) * (1 - visualErosion) };
+          const outer1 = { x: p1.x + (edge1.x - p1.x) * (1 - visualErosion), y: p1.y + (edge1.y - p1.y) * (1 - visualErosion) };
           ctx.beginPath();
-          ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
-          ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
-          ctx.stroke();
-        }
-        if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
-          // Close to finished — a bright pulsing outline so even a hair-thin
-          // remaining sliver (easy to miss in a tricky concave spot) stays
-          // clearly visible instead of disappearing to the eye. Only shown
-          // near the end so it doesn't distract during normal play.
-          const pulse = 0.5 + 0.5 * Math.sin(now / 220);
-          ctx.save();
-          ctx.globalAlpha = 0.55 + 0.35 * pulse;
-          ctx.lineWidth = 2.4;
-          ctx.strokeStyle = 'rgba(255,205,60,1)';
-          ctx.shadowColor = 'rgba(255,205,60,0.9)';
-          ctx.shadowBlur = 6 + 4*pulse;
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(outer0.x, outer0.y);
+          ctx.lineTo(outer1.x, outer1.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+          if(visualErosion > 0){
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+            ctx.beginPath();
+            ctx.moveTo(outer0.x, outer0.y);
+            ctx.lineTo(outer1.x, outer1.y);
+            ctx.stroke();
+          }
+          if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
+            const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+            ctx.save();
+            ctx.globalAlpha = 0.55 + 0.35 * pulse;
+            ctx.lineWidth = 2.4;
+            ctx.strokeStyle = 'rgba(255,205,60,1)';
+            ctx.shadowColor = 'rgba(255,205,60,0.9)';
+            ctx.shadowBlur = 6 + 4*pulse;
+            ctx.beginPath();
+            ctx.moveTo(outer0.x, outer0.y);
+            ctx.lineTo(outer1.x, outer1.y);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }else{
           ctx.beginPath();
-          ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+          ctx.moveTo(cx + innerR*Math.cos(a0), cy + innerR*Math.sin(a0));
+          ctx.lineTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
           ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
-          ctx.stroke();
-          ctx.restore();
+          ctx.lineTo(cx + innerR*Math.cos(a1), cy + innerR*Math.sin(a1));
+          ctx.arc(cx, cy, innerR, a1, a0, true);
+          ctx.closePath();
+          ctx.fillStyle = grad;
+          ctx.fill();
+          if(outerR < edgeR - 1){
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(120,60,20,0.4)';
+            ctx.beginPath();
+            ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+            ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+            ctx.stroke();
+          }
+          if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
+            const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+            ctx.save();
+            ctx.globalAlpha = 0.55 + 0.35 * pulse;
+            ctx.lineWidth = 2.4;
+            ctx.strokeStyle = 'rgba(255,205,60,1)';
+            ctx.shadowColor = 'rgba(255,205,60,0.9)';
+            ctx.shadowBlur = 6 + 4*pulse;
+            ctx.beginPath();
+            ctx.moveTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
+            ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
+            ctx.stroke();
+            ctx.restore();
+          }
         }
       }
     } else if(plateEdgePath){
@@ -3318,7 +3891,7 @@
 
     // brief bright flash the instant the festival scene opens up
     if(clearPhaseStart !== null){
-      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + liftDur);
+      const tSinceLift = now - (clearPhaseStart + CLEAR_PAUSE_MS + CLEAR_LIFT_MS);
       if(tSinceLift >= 0 && tSinceLift < 220){
         const flashA = Math.max(0, 1 - tSinceLift/220) * 0.55;
         ctx.fillStyle = 'rgba(255,247,225,' + flashA + ')';
@@ -3328,37 +3901,131 @@
   }
 
 
-  // パチスロのフリーズ演出のような、型抜き完成の瞬間にプチュンと画面が
-  // 落ちる暗転カット。t: 0..1。前半は一瞬の白フラッシュ(電力サージ風)、
-  // 後半は画面が横一本の輝線に収縮して消える、ブラウン管の電源断のような動き。
-  function drawDragonShutdownFreeze(t){
+  function smooth01(v){
+    const t = Math.max(0, Math.min(1, v));
+    return t*t*(3 - 2*t);
+  }
+
+  function drawSecretFreezeReveal(ms, now){
+    // Phase 1: instant shutdown. Pure black means the mold has been reset.
     ctx.save();
-    if(t < 0.22){
-      const flashT = t / 0.22;
-      const a = Math.sin(flashT * Math.PI); // 0 -> 1 -> 0, 一瞬だけ光る
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = 'rgba(255,255,255,' + (a*0.92).toFixed(3) + ')';
-      ctx.fillRect(0, 0, W, H);
-    } else {
-      const cT = (t - 0.22) / 0.78; // 0..1 収縮フェーズ
-      const ease = cT*cT; // 加速しながら潰れる
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, W, H);
-      const lineW = Math.max(0, W * 1.05 * (1 - ease));
-      const lineH = Math.max(0.6, H * 0.05 * (1 - cT));
-      ctx.globalAlpha = Math.max(0, 1 - cT * 0.25);
-      ctx.fillStyle = '#fff';
-      ctx.shadowColor = '#bfe8ff';
-      ctx.shadowBlur = W * 0.05 * (1 - cT);
-      ctx.fillRect(cx - lineW/2, cy - lineH/2, lineW, lineH);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,W,H);
+
+    // A shrinking CRT-like horizontal line sells the "プチュン" cut.
+    if(ms < 150){
+      const t = ms / 150;
+      const lineW = W * (1 - smooth01(t));
+      const alpha = 1 - t;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(255,255,255,.92)';
+      ctx.shadowColor = 'rgba(255,255,255,.9)';
+      ctx.shadowBlur = 14;
+      ctx.fillRect(cx-lineW/2, cy-1, lineW, 2);
+      ctx.restore();
+    }
+
+    if(ms < SECRET_FREEZE_MS){
+      ctx.restore();
+      return;
+    }
+
+    const lanternPhase = smooth01((ms - SECRET_FREEZE_MS) / SECRET_LANTERN_MS);
+    const revealPhase = smooth01((ms - SECRET_FREEZE_MS - SECRET_LANTERN_MS*0.48) / SECRET_REVEAL_MS);
+    const stageImg = clearImages[STAGES[currentStageIndex].name];
+
+    // Very dark festival haze appears only after the blackout has held.
+    const haze = ctx.createRadialGradient(cx,cy,W*.03,cx,cy,W*.62);
+    haze.addColorStop(0,'rgba(80,28,8,'+(0.22*lanternPhase)+')');
+    haze.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=haze;
+    ctx.fillRect(0,0,W,H);
+
+    const lanterns=[
+      {x:cx-W*.37,y:cy-W*.23,d:.00,s:1.0},
+      {x:cx+W*.37,y:cy-W*.23,d:.16,s:1.0},
+      {x:cx-W*.42,y:cy+W*.14,d:.31,s:.82},
+      {x:cx+W*.42,y:cy+W*.14,d:.46,s:.82}
+    ];
+    lanterns.forEach(l=>{
+      const lit=smooth01((lanternPhase-l.d)/.30);
+      if(lit<=0)return;
+      const pulse=.92+.08*Math.sin(now/210+l.x);
+      const glow=ctx.createRadialGradient(l.x,l.y,0,l.x,l.y,W*.15*l.s);
+      glow.addColorStop(0,'rgba(255,176,56,'+(0.42*lit*pulse)+')');
+      glow.addColorStop(1,'rgba(255,90,12,0)');
+      ctx.fillStyle=glow;ctx.beginPath();ctx.arc(l.x,l.y,W*.15*l.s,0,Math.PI*2);ctx.fill();
+      ctx.save();ctx.translate(l.x,l.y);ctx.globalAlpha=lit;
+      ctx.fillStyle='#ff7a20';ctx.shadowColor='#ffb13c';ctx.shadowBlur=W*.045;
+      ctx.beginPath();ctx.ellipse(0,0,W*.033*l.s,W*.051*l.s,0,0,Math.PI*2);ctx.fill();
+      ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,225,150,.78)';ctx.lineWidth=1.2;
+      for(let k=-1;k<=1;k++){ctx.beginPath();ctx.moveTo(k*W*.012*l.s,-W*.045*l.s);ctx.quadraticCurveTo(k*W*.018*l.s,0,k*W*.012*l.s,W*.045*l.s);ctx.stroke();}
+      ctx.restore();
+    });
+
+    if(revealPhase>0 && !secretRevealSoundTriggered){
+      secretRevealSoundTriggered=true;
+      playSecretRevealSound();
+      vibrate([0,12,35,18]);
+    }
+
+    // The reward artwork is drawn as a new scene, never clipped to the mold.
+    if(stageImg && stageImg.loaded && revealPhase>0){
+      ctx.save();
+      const scale=.86 + .14*revealPhase;
+      ctx.translate(cx,cy-W*.035);
+      ctx.scale(scale,scale);
+      ctx.translate(-cx,-(cy-W*.035));
+      ctx.globalAlpha=revealPhase;
+      ctx.shadowColor='rgba(255,120,25,.85)';
+      ctx.shadowBlur=W*.045*revealPhase;
+      drawImageCover(stageImg.img,cx,cy-W*.035,W*.90);
+      ctx.restore();
+    }
+
+    // Golden particles materialize with the dragon.
+    if(revealPhase>0){
+      ctx.save();
+      for(let i=0;i<34;i++){
+        const seed=i*12.9898;
+        const a=(seed%6.283)+now/2400*(i%2?1:-1);
+        const rr=W*(.16+((i*37)%100)/100*.31);
+        const x=cx+Math.cos(a)*rr;
+        const y=cy-W*.03+Math.sin(a)*rr*.72;
+        const tw=.35+.65*Math.abs(Math.sin(now/260+i));
+        ctx.globalAlpha=revealPhase*tw*.8;
+        ctx.fillStyle=i%3===0?'#fff0a8':'#ff9d2a';
+        ctx.beginPath();ctx.arc(x,y,W*(.0025+(i%4)*.0008),0,Math.PI*2);ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    const textPhase=smooth01((ms-SECRET_FREEZE_MS-SECRET_LANTERN_MS-620)/520);
+    if(textPhase>0){
+      ctx.save();
+      ctx.globalAlpha=textPhase;
+      ctx.textAlign='center';
+      ctx.font='900 '+Math.round(W*.052)+'px serif';
+      ctx.fillStyle='#ffe6a8';
+      ctx.shadowColor='#ff6b16';ctx.shadowBlur=18;
+      ctx.fillText('ドラゴンが現れた！！',cx,cy+W*.42);
+      ctx.restore();
+    }
+
+    if(ms > SECRET_FREEZE_MS + SECRET_LANTERN_MS + SECRET_REVEAL_MS - 120 && !albumSaved){
+      albumSaved=true;
+      requestAnimationFrame(()=>{
+        try{saveToAlbum();}
+        catch(e){showDebugToast('secret album save failed: '+(e&&e.message?e.message:e));}
+      });
     }
     ctx.restore();
   }
 
-  function drawDragonSecretBackdrop(revealT, celebT, now, instantDark){
+  function drawDragonSecretBackdrop(revealT, celebT, now){
     ctx.save();
-    const dark = instantDark ? 1 : Math.min(1, revealT / 0.28);
+    const dark = Math.min(1, revealT / 0.28);
     const bg = ctx.createRadialGradient(cx, cy, R*0.1, cx, cy, plateR*1.55);
     bg.addColorStop(0, 'rgba(18,8,10,' + dark + ')');
     bg.addColorStop(0.58, 'rgba(5,4,12,' + dark + ')');
@@ -3410,11 +4077,8 @@
       ctx.restore();
     });
 
-    // A dim golden halo anticipates the dragon, then fades OUT (型抜きの枠
-    // をオフ) exactly as the real illustration fades IN, full and unclipped.
-    const stageImg = clearImages['龍'];
-    const imgReveal = Math.max(0, Math.min(1, (revealT - 0.55) / 0.35));
-    const dragonGlow = Math.max(0, Math.min(1, (revealT - 0.30) / 0.25)) * (1 - imgReveal);
+    // A dim golden halo anticipates the dragon before the illustration fades in.
+    const dragonGlow = Math.max(0, Math.min(1, (revealT - 0.48) / 0.45));
     if(dragonGlow > 0 && shapePath){
       ctx.save();
       ctx.globalAlpha = dragonGlow * (0.55 + 0.2*Math.sin(now/180));
@@ -3424,19 +4088,6 @@
       ctx.shadowBlur = W*0.055;
       ctx.stroke(shapePath);
       ctx.restore();
-    }
-    if(imgReveal > 0 && stageImg && stageImg.loaded){
-      ctx.save();
-      ctx.globalAlpha = imgReveal;
-      ctx.shadowColor = 'rgba(255,180,60,0.9)';
-      ctx.shadowBlur = W*0.05*imgReveal;
-      const align = clearImageAlign['龍'];
-      if(align) drawImageAligned(stageImg.img, align);
-      else drawImageCover(stageImg.img, cx, cy, R * 2.5);
-      ctx.restore();
-    } else if(imgReveal > 0.05 && !dragonImgMissingWarned){
-      dragonImgMissingWarned = true;
-      showDebugToast('clear_dragon.png が読み込めていません（images/フォルダに保存済みか確認してください）');
     }
 
     if(celebT > 0.15){
@@ -3448,7 +4099,7 @@
       ctx.fillStyle='#ffe2a0';
       ctx.shadowColor='#ff6b1a';
       ctx.shadowBlur=18;
-      ctx.fillText('DRAGON AWAKENED',cx,cy+plateR*1.24);
+      ctx.fillText('SECRET STAGE',cx,cy+plateR*1.24);
       ctx.restore();
     }
     ctx.restore();
@@ -3624,7 +4275,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 79 — DRAGON CREST: readable radial mold';
+  const BUILD_TAG = 'BUILD 81 — SECRET FREEZE: blackout then dragon appears';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
