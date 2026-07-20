@@ -238,6 +238,9 @@
     }catch(e){ return { unlockAll:false, festivalFrame:false, starTip:false }; }
   }
   let devSettings = loadDevSettings();
+  let devSecretDemoActive = false;
+  let devSecretDemoPreviousStage = 0;
+  let devSecretDemoTimer = null;
   function saveDevSettings(){
     try{ localStorage.setItem(DEV_SETTINGS_STORAGE_KEY, JSON.stringify(devSettings)); }catch(e){}
   }
@@ -985,6 +988,8 @@
           <button class="devToggleBtn" data-dev="festivalFrame"></button>
           <button class="devToggleBtn" data-dev="starTip"></button>
           <button class="devToggleBtn" data-dev="unlockAll"></button>
+          <button id="devSecretDemoBtn" type="button" style="display:block;width:100%;margin:14px 0 8px;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,154,50,.82);background:linear-gradient(180deg,rgba(255,126,35,.28),rgba(98,33,8,.35));color:#ffd99b;text-align:left;font-size:13px;font-weight:900;">▶ シークレット演出デモ</button>
+          <div style="font-size:10px;line-height:1.55;opacity:.58;margin:0 3px 11px;">記録・アルバム・ランキングを変更せず、プチュン暗転からドラゴン出現まで再生します。</div>
           <button id="devCloseBtn" style="width:100%;margin-top:12px;padding:11px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.07);color:#fbf3df;font-weight:800;">閉じる</button>
         </div>`;
       developerPanelEl.querySelectorAll('.devToggleBtn').forEach(btn => {
@@ -1001,12 +1006,87 @@
           devToast(devSettings[key] ? 'プレビューをONにしました' : 'プレビューをOFFにしました');
         });
       });
+      developerPanelEl.querySelector('#devSecretDemoBtn').addEventListener('click', startSecretRevealDemo);
       developerPanelEl.querySelector('#devCloseBtn').addEventListener('click', () => developerPanelEl.style.display = 'none');
       document.body.appendChild(developerPanelEl);
     }
     refreshDeveloperPanel();
     developerPanelEl.style.display = 'flex';
   }
+  function startSecretRevealDemo(){
+    const secretIndex = STAGES.findIndex(stage => stage.secret);
+    if(secretIndex < 0){
+      devToast('シークレットステージが見つかりません');
+      return;
+    }
+
+    if(rafId !== null){
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if(devSecretDemoTimer){
+      clearTimeout(devSecretDemoTimer);
+      devSecretDemoTimer = null;
+    }
+
+    devSecretDemoActive = true;
+    devSecretDemoPreviousStage = currentStageIndex;
+    currentStageIndex = secretIndex;
+    buildStageCache();
+
+    // Reset only the in-memory presentation state. No clear records, XP,
+    // ranking entries, rewards or album data are touched.
+    resetGame();
+    mode = 'clearReveal';
+    elapsed = 0;
+    clearPhaseStart = performance.now();
+    liftTriggered = false;
+    celebTriggered = false;
+    secretRevealSoundTriggered = false;
+    albumSaved = false;
+    fireworks = [];
+    dust = [];
+    chipFrags = [];
+    shards = [];
+
+    if(developerPanelEl) developerPanelEl.style.display = 'none';
+    showScreen(null);
+    hud.classList.add('hidden');
+    legend.classList.add('hidden');
+    carveHelpBtn.style.display = 'none';
+    if(navBar) navBar.classList.add('hidden');
+
+    initAudio();
+    if(audioCtx && audioCtx.state === 'suspended'){
+      audioCtx.resume().catch(() => {});
+    }
+    playSecretFreezeSound();
+    vibrate([0,16,45,10]);
+    loop();
+
+    devSecretDemoTimer = setTimeout(() => {
+      if(!devSecretDemoActive) return;
+      devSecretDemoActive = false;
+      devSecretDemoTimer = null;
+      if(rafId !== null){
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      mode = 'title';
+      clearPhaseStart = null;
+      albumSaved = false;
+      currentStageIndex = devSecretDemoPreviousStage;
+      buildStageCache();
+      if(navBar){
+        navBar.classList.remove('hidden');
+        setNavActive('mypage');
+      }
+      refreshMyPage();
+      showScreen(myPageScreen);
+      openDeveloperPanel();
+    }, SECRET_TOTAL_MS + 450);
+  }
+
   function refreshDeveloperPanel(){
     if(!developerPanelEl) return;
     const labels = {
@@ -2890,7 +2970,10 @@
         erodedCount++;
       }
       const emitChance = cfg.fragmentChance(i);
-      if(Math.random() < emitChance) spawnChipFragmentOutline(b, now, shapePts[b]);
+      if(Math.random() < emitChance){
+        const chipPoint = shapePts[b];
+        spawnChipFragmentOutline(b, now, { x: chipPoint.x, y: chipPoint.y });
+      }
     }
     if(!scraped) return;
     updateProgress();
@@ -2908,15 +2991,17 @@
   function handleMoveHard(rawTip){
     if(shapeIsOutline){
       return handleMoveOutline(rawTip, {
-        innerFail: safeBand * 0.42,
-        innerWarnOnly: 0,
-        magnetRange: safeBand * 2.2,
-        snapStrength: 0.52,
-        clampInside: null,
-        greenInner: 0,
-        greenOuter: safeBand,
+        // SECRET STAGE remains hard, but the inside corridor now gives a
+        // readable warning before failure instead of dropping out instantly.
+        innerFail: safeBand * 0.90,
+        innerWarnOnly: safeBand * 0.34,
+        magnetRange: safeBand * 2.45,
+        snapStrength: 0.58,
+        clampInside: safeBand * 0.22,
+        greenInner: safeBand * 0.22,
+        greenOuter: safeBand * 1.05,
         offsets: ()=>[0],
-        fragmentChance: (i)=>(i === 0 ? 0.30 : 0.12),
+        fragmentChance: (i)=>(i === 0 ? 0.34 : 0.12),
         scratchGap: 82,
         breakGap: 240
       });
@@ -3481,69 +3566,98 @@
     grad.addColorStop(0, '#fffaf0');
     grad.addColorStop(1, '#e7d9ad');
     if(shapePts.length === N_BUCKETS){
-      for(let i = 0; i < N_BUCKETS; i++){
-        const innerR = targetRCache[i];
-        const edgeR = plateEdgeCache[i];
+      if(shapeIsOutline){
+        // BUILD 82: the dragon uses a true contour rather than radial wedges.
+        // Draw the plate as one stable ring, then chip only the exact contour
+        // segments touched by the needle. This removes the old bug where a
+        // cut near the neck could make candy disappear somewhere else.
+        const candyRing = new Path2D();
+        candyRing.addPath(plateEdgePath);
+        candyRing.addPath(shapePath);
+        ctx.fillStyle = grad;
+        ctx.fill(candyRing, 'evenodd');
 
-        // BUILD 60 visual assist: EASY makes the surrounding shell collapse
-        // farther around the traced point than the actual progress buckets.
-        // This is presentation only. Completion still uses fullyEroded[], so
-        // the game stays honest while the plate stops feeling like busywork.
-        let visualErosion = erosion[i];
-        if(gameMode === 'easy' && visualErosion < 1){
-          const VISUAL_SPREAD = 7;
-          for(let d = 1; d <= VISUAL_SPREAD; d++){
-            const left = erosion[(i - d + N_BUCKETS) % N_BUCKETS];
-            const right = erosion[(i + d) % N_BUCKETS];
-            const neighbor = Math.max(left, right);
-            if(neighbor <= 0) continue;
-            const falloff = 1 - (d / (VISUAL_SPREAD + 1));
-            visualErosion = Math.max(visualErosion, neighbor * (0.72 + 0.28 * falloff));
-          }
-          if(visualErosion > 0.82) visualErosion = 1;
-        }
-        const outerR = edgeR - (edgeR - innerR) * visualErosion;
-        if(outerR <= innerR + 0.5) continue; // that wedge's candy is fully gone
-        const a0 = (i / N_BUCKETS) * Math.PI * 2;
-        const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
-        if(shapeIsOutline){
+        // Subtle intact mold edge.
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(2.2, W * 0.007);
+        ctx.strokeStyle = 'rgba(122,72,30,0.24)';
+        ctx.stroke(shapePath);
+        ctx.restore();
+
+        const completion = erodedCount / N_BUCKETS;
+        const finishPulse = 0.5 + 0.5 * Math.sin(now / 220);
+
+        for(let i = 0; i < N_BUCKETS; i++){
           const p0 = shapePts[i];
           const p1 = shapePts[(i + 1) % N_BUCKETS];
-          const edge0 = plateEdgePts[i];
-          const edge1 = plateEdgePts[(i + 1) % N_BUCKETS];
-          const outer0 = { x: p0.x + (edge0.x - p0.x) * (1 - visualErosion), y: p0.y + (edge0.y - p0.y) * (1 - visualErosion) };
-          const outer1 = { x: p1.x + (edge1.x - p1.x) * (1 - visualErosion), y: p1.y + (edge1.y - p1.y) * (1 - visualErosion) };
-          ctx.beginPath();
-          ctx.moveTo(p0.x, p0.y);
-          ctx.lineTo(outer0.x, outer0.y);
-          ctx.lineTo(outer1.x, outer1.y);
-          ctx.lineTo(p1.x, p1.y);
-          ctx.closePath();
-          ctx.fillStyle = grad;
-          ctx.fill();
-          if(visualErosion > 0){
-            ctx.lineWidth = 1.5;
-            ctx.strokeStyle = 'rgba(120,60,20,0.4)';
-            ctx.beginPath();
-            ctx.moveTo(outer0.x, outer0.y);
-            ctx.lineTo(outer1.x, outer1.y);
-            ctx.stroke();
-          }
-          if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
-            const pulse = 0.5 + 0.5 * Math.sin(now / 220);
+          const done = fullyEroded[i] === 1 || erosion[i] >= EROSION_DONE;
+
+          if(done){
+            // A narrow broken groove exactly under the carved contour.
             ctx.save();
-            ctx.globalAlpha = 0.55 + 0.35 * pulse;
-            ctx.lineWidth = 2.4;
-            ctx.strokeStyle = 'rgba(255,205,60,1)';
-            ctx.shadowColor = 'rgba(255,205,60,0.9)';
-            ctx.shadowBlur = 6 + 4*pulse;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
             ctx.beginPath();
-            ctx.moveTo(outer0.x, outer0.y);
-            ctx.lineTo(outer1.x, outer1.y);
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.lineWidth = Math.max(6.5, W * 0.020);
+            ctx.strokeStyle = 'rgba(70,34,16,0.50)';
+            ctx.shadowColor = 'rgba(40,18,8,0.28)';
+            ctx.shadowBlur = W * 0.010;
+            ctx.stroke();
+
+            // Pale sugar edge sells the fresh chip without removing a remote wedge.
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.lineWidth = Math.max(2.0, W * 0.006);
+            ctx.strokeStyle = 'rgba(255,244,202,0.82)';
+            ctx.stroke();
+            ctx.restore();
+          }else if(completion >= 0.90){
+            // Only the real unfinished contour pulses near completion.
+            ctx.save();
+            ctx.globalAlpha = 0.58 + 0.34 * finishPulse;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.lineWidth = Math.max(3.0, W * 0.009);
+            ctx.strokeStyle = 'rgba(255,210,63,1)';
+            ctx.shadowColor = 'rgba(255,210,63,0.90)';
+            ctx.shadowBlur = 6 + 4 * finishPulse;
             ctx.stroke();
             ctx.restore();
           }
-        }else{
+        }
+      }else{
+        for(let i = 0; i < N_BUCKETS; i++){
+          const innerR = targetRCache[i];
+          const edgeR = plateEdgeCache[i];
+
+          let visualErosion = erosion[i];
+          if(gameMode === 'easy' && visualErosion < 1){
+            const VISUAL_SPREAD = 7;
+            for(let d = 1; d <= VISUAL_SPREAD; d++){
+              const left = erosion[(i - d + N_BUCKETS) % N_BUCKETS];
+              const right = erosion[(i + d) % N_BUCKETS];
+              const neighbor = Math.max(left, right);
+              if(neighbor <= 0) continue;
+              const falloff = 1 - (d / (VISUAL_SPREAD + 1));
+              visualErosion = Math.max(visualErosion, neighbor * (0.72 + 0.28 * falloff));
+            }
+            if(visualErosion > 0.82) visualErosion = 1;
+          }
+
+          const outerR = edgeR - (edgeR - innerR) * visualErosion;
+          if(outerR <= innerR + 0.5) continue;
+          const a0 = (i / N_BUCKETS) * Math.PI * 2;
+          const a1 = ((i + 1.02) / N_BUCKETS) * Math.PI * 2;
+
           ctx.beginPath();
           ctx.moveTo(cx + innerR*Math.cos(a0), cy + innerR*Math.sin(a0));
           ctx.lineTo(cx + outerR*Math.cos(a0), cy + outerR*Math.sin(a0));
@@ -3553,6 +3667,7 @@
           ctx.closePath();
           ctx.fillStyle = grad;
           ctx.fill();
+
           if(outerR < edgeR - 1){
             ctx.lineWidth = 1.5;
             ctx.strokeStyle = 'rgba(120,60,20,0.4)';
@@ -3561,6 +3676,7 @@
             ctx.lineTo(cx + outerR*Math.cos(a1), cy + outerR*Math.sin(a1));
             ctx.stroke();
           }
+
           if(erosion[i] < EROSION_DONE && erodedCount / N_BUCKETS > 0.9){
             const pulse = 0.5 + 0.5 * Math.sin(now / 220);
             ctx.save();
@@ -3578,7 +3694,6 @@
         }
       }
     } else if(plateEdgePath){
-      // fallback (very first frame before the stage cache exists)
       ctx.fillStyle = grad;
       ctx.fill(plateEdgePath);
     }
@@ -4013,7 +4128,9 @@
       ctx.restore();
     }
 
-    if(ms > SECRET_FREEZE_MS + SECRET_LANTERN_MS + SECRET_REVEAL_MS - 120 && !albumSaved){
+    if(!devSecretDemoActive &&
+       ms > SECRET_FREEZE_MS + SECRET_LANTERN_MS + SECRET_REVEAL_MS - 120 &&
+       !albumSaved){
       albumSaved=true;
       requestAnimationFrame(()=>{
         try{saveToAlbum();}
@@ -4275,7 +4392,7 @@
   // Small on-screen build tag — purely so it's possible to confirm at a
   // glance (no dev tools needed) whether the deployed script.js is actually
   // this version. Bump BUILD_TAG any time a new script.js is handed off.
-  const BUILD_TAG = 'BUILD 81 — SECRET FREEZE: blackout then dragon appears';
+  const BUILD_TAG = 'BUILD 83 — DEV SECRET DEMO: freeze to dragon reveal';
   const buildTagEl = document.createElement('div');
   buildTagEl.textContent = BUILD_TAG;
   buildTagEl.style.cssText = 'position:fixed; bottom:4px; right:6px; font-size:10px; ' +
